@@ -21,7 +21,9 @@
 
 1. `agent/created` 时，插件先读取 **该 agent 自己的工具视图**（此时还没有本插件的限制），把「不在常驻层」的名字组成 deny 表，
    再调用 `agent.ctx.tools.restrict({ deny })`。用 deny 而不是 allow：preset 以 scope 局部注册的核心工具（`read`/`write`/`pwsh` 等）
-   不在全局注册表里，allow-list 会连它们一起藏掉；deny 只针对确实该隐藏的名字，且重建时会跳过本会话已激活的工具；
+   不在全局注册表里，allow-list 会连它们一起藏掉；deny 只针对确实该隐藏的名字，且重建时会跳过本会话已激活的工具。
+   插件加载时（启停、更新、hot reload）还会对 `ctx.agents.list()` 里已经活着的 agent 各做一次同样的事——否则卸载时释放掉的
+   限制再也不会有人补回来，老会话会静默地跑在全量工具面上；
 2. 模型调用 `toolbox_load(["name"])` 后，插件先撤销旧限制、重新读取该 agent 的工具视图，得到**该会话真实装配的工具面**；
    名字不在其中就返回 `unavailable`（只被别的预设装配、本会话没有），不会伪造成"已激活"——`restrict()` 只能取消隐藏，不能创造工具；
 3. 工具表发生变化，agent-loop 自动写入一条 `developer/message`（source: `tool-registry`，含 `tool-addition` 块）；
@@ -81,7 +83,9 @@
 
 ## 已知限制
 
-- **只影响新创建的 agent**。插件安装/启用前已经存在的会话不会被回溯限制，需要新开对话。
+- **能不能立刻省，取决于会话里已经声明过什么**。插件加载时会扫描 `ctx.agents.list()`，给当时活着的 agent 补上限制；
+  但 `resumePreserve` 会把会话日志里已经声明过的工具视为已加载（否则模型手里有名字却调不动），所以插件启用前
+  就已经见过全量工具表的老会话不会被「倒扣」回去——想要完整节省，新开一个对话。
 - `tools.restrict()` 只作用于该 agent 继承链上的工具；由 agent 自身 scope 注册的工具无法被命名，插件会自动过滤掉这类名字，
   这是刻意保留的安全边界。
 - `addition-only` 路由会丢弃 `tool_removal`，所以已加载的工具**在本会话内**无法再收回（没有会话内 unload）：它只在本次对话里保持常驻。

@@ -134,3 +134,53 @@ Fixes and their evidence:
 Unit tests: `npm test` → 6/6 pass. The `unavailable` bucket (a tool another preset mounted but this agent did not) is
 covered by the unit test; the live session above exercised the `unknown` bucket because no other preset had touched that
 plugin instance yet.
+
+## 0.1.2 regression (2026-11-18)
+
+Two GUI conversations were opened by hand in the `minimal` preset and both asked for `subagent` (a tool `minimal` does
+not mount). The plugin was 0.1.1 in both; the two runs disagree, and the disagreement is the defect.
+
+| | session `5d9f2c35` | session `007cdbc7` |
+| --- | --- | --- |
+| created | 13:03:34, plugin already enabled | 12:53:46, **before** the two plugin reloads at 12:58:43–12:59:10 |
+| preset switch to `minimal` | 13:03:36 | 13:01:19 |
+| first `request/header` | 5 tools / 2,441 chars | 17 tools / 11,764 chars |
+| first `toolbox_status` | `restricted: true`, `agentToolCount: 5`, `composedToolCount: 21`, awaiting 16 | `restricted: false`, `agentToolCount: 21`, `composedToolCount: 106` (the process-wide universe), awaiting 87 |
+| `toolbox_search("subagent")` | 0 hits (correct: not composed) | **5 hits**, including `subagent` |
+| `toolbox_load(["subagent"])` | `activated: []`, `unavailable: ["subagent"]` | `activated: []`, `unavailable: ["subagent"]` |
+| `UNKNOWN_TOOL` results | 0 | 0 |
+| final answer | honest: "本次实际上没有成功调用 subagent" | honest: "subagent 工具这次用不了 … 我不会虚构调用结果" |
+
+Session `007cdbc7` was created while the plugin was being reloaded for the 0.1.1 verification. Disabling the plugin
+destroys every per-agent restriction, and re-enabling cannot restore them: `agent/created` already fired long before, so
+that session ran its first turn on the full tool surface (`composedToolCount: 106` is the plugin's process-wide universe,
+not its composition) and `toolbox_search` advertised the universe, offering `subagent` right before `toolbox_load`
+answered `unavailable`. The state only appeared when `toolbox_load` created it lazily. Session `5d9f2c35`, created after
+the reload, behaved exactly as designed.
+
+Fixes and evidence:
+
+| Check | Evidence |
+| --- | --- |
+| a plugin load re-restricts agents that already exist | unit test "a plugin load re-restricts agents that already existed": apply() with a live-agent service hides `web_search`/`subagent` and `toolbox_status` reports `restricted: true`, `composedToolCount: 6` |
+| the first `toolbox_*` call heals a missing state | unit test "toolbox_search applies the restriction itself for an agent it never saw": searching for another preset's `list_agents` returns no results instead of the universe fallback, and the composed hidden tool is still findable |
+| nothing regressed in the 0.1.1 behaviour | `npm test` → 8/8; live reload followed by a `toolbox_status` from the lead session reports a composed surface instead of the universe |
+
+The first line was also exercised live, because a unit test alone would not prove that `ctx.agents.list()` is reachable
+from a plugin and that restricting an idle agent takes effect before its next request:
+
+- **Lead session** (agent that existed long before the plugin was installed): before the reload `toolbox_status`
+  reported `restricted: false`, `composedToolCount: 107` (the universe); after the 0.1.2 reload the same call reported
+  `restricted: true`, `composedToolCount: 49` (its real composition), `visible` = the 16 resident names, `activated` = the
+  26 tools its log had already announced, `awaiting` = the 4 `team_task_*` names.
+- **A child agent created while the plugin was active** (`bdc9b764`, cordis, header 18 tools) was left idle, then the
+  plugin was disabled at 13:16:43 and re-enabled at 13:16:46 — which releases and re-applies every restriction. Its next
+  request, at 13:16:49 and before any `toolbox_*` call, carried **19 tools** (16 resident + 3 toolbox) instead of the full
+  49-tool cordis surface; the `toolbox_status` it then called reported `restricted: true`, `composedToolCount: 49`,
+  `activated: []`, `awaitingCount: 30`. Under 0.1.1 that header would have been the full surface: the plugin released the
+  restriction at unload and `agent/created` never fires again for an agent that already exists.
+
+Live re-check still owed for the two hand-run `minimal` conversations: after this 0.1.2 reload, a message in
+`007cdbc7` should report `restricted: true`, `composedToolCount: 21`, `activated` = the 12 tools its already-declared
+header exposed, `awaiting` = the 4 `team_task_*` names; and a message in `5d9f2c35` should report `restricted: true`,
+`composedToolCount: 21`, `visible` = `pwsh` + `read_image`, and `subagent` still `unavailable`.

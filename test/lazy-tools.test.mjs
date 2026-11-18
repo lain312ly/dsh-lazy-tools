@@ -24,12 +24,15 @@ function definition(name, description = `${name} tool`) {
   }
 }
 
-function createHarness() {
+function createHarness({ liveAgents } = {}) {
   const handlers = new Map()
   const registered = new Map()
 
   const ctx = {
-    get: () => undefined,
+    get(key) {
+      if (key === 'agents' && liveAgents !== undefined) return { list: () => liveAgents() }
+      return undefined
+    },
     on(event, handler) {
       handlers.set(event, handler)
       return () => handlers.delete(event)
@@ -197,4 +200,46 @@ test('status reports the composed surface, not the process-wide universe', async
   assert.equal(status.composedToolCount, 5)
   assert.ok(status.awaiting.includes('subagent'), 'composed but hidden tool is awaiting')
   assert.ok(!status.awaiting.includes('list_agents'), 'another preset\u2019s tool is not awaited')
+})
+
+test('a plugin load re-restricts agents that already existed', async () => {
+  const live = []
+  const harness = createHarness({ liveAgents: () => live })
+  const agent = harness.makeAgent('r1', ['read', 'web_search', 'subagent'])
+  // The agent was created before this plugin instance: no agent/created will fire.
+  live.push(agent)
+
+  apply(harness.ctx, { visible: ['read'], promptSection: false, statusTool: true })
+
+  const names = harness.ctx.tools.definitions(agent).map(entry => entry.name)
+  assert.ok(names.includes('read'), 'resident tool stays visible')
+  assert.ok(!names.includes('web_search'), 'deferred tool hidden by the load-time sweep')
+  assert.ok(!names.includes('subagent'), 'deferred tool hidden by the load-time sweep')
+
+  const status = await harness.registered.get('toolbox_status').execute({}, { agent })
+  assert.equal(status.restricted, true)
+  // 3 toolbox tools (global) + read + web_search + subagent = 6
+  assert.equal(status.composedToolCount, 6)
+  assert.ok(status.awaiting.includes('web_search'))
+})
+
+test('toolbox_search applies the restriction itself for an agent it never saw', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, { visible: ['read'], promptSection: false, statusTool: true })
+  // Another preset mounts list_agents, so the name reaches the process-wide universe.
+  const other = harness.makeAgent('other', ['read', 'list_agents'])
+  harness.emit('agent/created', { agent: other })
+
+  const agent = harness.makeAgent('a7', ['read', 'web_search', 'pwsh'])
+  // No agent/created: the plugin instance loaded after this agent was created.
+
+  const cross = await harness.registered.get('toolbox_search').execute({ query: 'list agents' }, { agent })
+  assert.deepEqual(cross.results, [], 'never offers a tool outside this composition')
+
+  const own = await harness.registered.get('toolbox_search').execute({ query: 'web search' }, { agent })
+  assert.ok(own.results.some(entry => entry.name === 'web_search'), 'composed hidden tool is still findable')
+
+  const names = harness.ctx.tools.definitions(agent).map(entry => entry.name)
+  assert.ok(!names.includes('web_search'), 'search applied the restriction instead of leaving the agent bare')
+  assert.ok(names.includes('read'))
 })

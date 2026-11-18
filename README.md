@@ -174,7 +174,8 @@ github:lain/dsh-lazy-tools#v0.1.0
 | **PTC** | `ptc`（挂 `tool-executor-ptc`）、`flash-lean-ptc-v3`（挂 `tool-presentation: {mode: ptc}`） | 只有 `run_code`，其余工具以 `ToolArgsMap` SDK 块写在**系统提示词**里 | 省的是系统提示词（实测 −59%）；header 不变，**没有 `tool_addition` 可用**，每次 load 会改写一次系统提示词 → 触发一次前缀缓存失效，建议集中加载 |
 
 - 在 `@deepseek-ai/dsh@0.2.2-rc.3` 上验证；插件只用到 `ctx.tools.restrict`、`ctx.systemPrompt.section`、
-  `ctx.on('agent/created' | 'agent/disposed' | 'tools/change')`、`session.toolHistory()`、`agent.model.current()` 这些公开面；
+  `ctx.on('agent/created' | 'agent/disposed' | 'tools/change')`、`ctx.agents.list()`、`session.toolHistory()`、
+  `agent.model.current()` 这些公开面；
 - native 呈现下路由的 `toolUpdate` 能力决定增量通道形态：`addition-only` / `in-history` 走 `tool_addition`；
   `null` 时加载仍然有效，只是工具在下一份完整工具表里生效；
 - `tools.restrict()` 只能**取消隐藏**本预设已装配的工具，不能创造工具——所以 `toolbox_load` 只对本会话的工具面生效，
@@ -183,7 +184,9 @@ github:lain/dsh-lazy-tools#v0.1.0
 
 ## 已知限制
 
-- **只影响新创建的 agent**。插件安装/启用前已经存在的会话不会被回溯限制。
+- **能不能立刻省，取决于会话里已经声明过什么。** 插件加载时会扫描 `ctx.agents.list()`，给当时活着的 agent 补上限制
+  （0.1.2 起）；但 `resumePreserve` 会把会话日志里已经声明过的工具视为已加载（否则模型手里有名字却调不动），
+  所以插件启用前就已经见过全量工具表的老会话不会被「倒扣」回去——想要完整节省，新开一个对话。
 - `tools.restrict()` 只能命名该 agent 继承链上的工具；agent 自身 scope 注册的工具无法被命名，插件会自动过滤掉这类名字
   （刻意保留的安全边界）。
 - `addition-only` 路由会丢弃 `tool_removal`，所以**已加载的工具在本会话内无法再收回**（没有会话内 unload）：
@@ -207,6 +210,11 @@ github:lain/dsh-lazy-tools#v0.1.0
 
 3. 若出现 HTTP 400 或 `tool_addition` 相关报错，先禁用本插件并删除上面的 override；
 4. 改了 `index.js` 后必须对 bundle 做一次 disable → enable：已装载的 JS 模块不会热替换。
+   启停会释放所有已有 agent 上的限制，0.1.2 起插件加载时会自动给它们补回（`ctx.agents.list()`）；
+   如果某个老会话日志里已经声明过全量工具，它会按「已加载」保留，看起来就像没生效——那是对该会话的正确行为；
+5. `toolbox_status` 的 `restricted` / `composedToolCount` 是**调用那一刻**的读数，不是配置快照：切预设后
+   `composedToolCount` 会跟着变；`activated` 里列出一堆名字，通常说明该会话日志里已经声明过它们
+   （`resumePreserve`，用于恢复会话），不是插件乱激活。
 
 ## 卸载插件
 
@@ -242,7 +250,7 @@ dsh-lazy-tools/
 
 ```bash
 npm run check     # node --check + 清单/资源自检
-npm test          # 内存 harness 行为测试：隐藏/激活/unavailable/分词搜索/切预设清理
+npm test          # 内存 harness 行为测试：隐藏/激活/unavailable/分词搜索/切预设清理/重载补限制
 npm run verify    # 读取 ~/.dsh/sessions 最新日志，断言首个工具表足够小且出现 tool_addition
 python scripts/tool-census.py --days 30   # 按自己的历史调用频率，给出 visible 建议
 ```

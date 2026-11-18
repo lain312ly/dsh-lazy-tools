@@ -1,6 +1,6 @@
 {
   "name": "dsh-lazy-tools",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Cache-friendly progressive tool disclosure for DeepSeek Harness: keep rarely used tools out of every request and activate them on demand through the DeepSeek tool_addition channel.",

@@ -256,6 +256,28 @@ export function apply(ctx, rawConfig) {
     return state
   }
 
+  /** State for one agent, applying the restriction first if it was never applied.
+   *
+   * `agent/created` is the normal entry point, but it cannot fire for an agent
+   * that already existed when this plugin instance loaded (a profile restart in
+   * the middle of a session, a plugin update, a hot reload). Without this the
+   * session would silently run unrestricted and `toolbox_search` would offer the
+   * process-wide universe, including tools this preset never mounted.
+   */
+  function ensureState(agent) {
+    const state = stateFor(agent)
+    if (state.snapshot.size > 0) return state
+    mutating = true
+    try {
+      applyRestriction(state)
+    } catch (error) {
+      warn(`could not restrict tools for ${agent.id}`, error)
+    } finally {
+      mutating = false
+    }
+    return state
+  }
+
   function activatedOf(agent) {
     if (agent === undefined) return undefined
     return agents.get(agent.id)
@@ -407,7 +429,7 @@ export function apply(ctx, rawConfig) {
         const tokens = query.toLowerCase().split(/[^a-z0-9_]+/).filter(token => token.length > 0)
         if (tokens.length === 0) throw new Error('query must contain at least one searchable word')
         const agent = exec ? exec.agent : undefined
-        const state = activatedOf(agent)
+        const state = agent === undefined ? undefined : ensureState(agent)
         const pool = poolFor(agent)
         // Only surface tools the step cannot already call.
         const view = agent === undefined ? new Set() : agentView(agent)
@@ -473,7 +495,7 @@ export function apply(ctx, rawConfig) {
         const requested = rawNames.filter(entry => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
         if (requested.length === 0) throw new Error('names must be a non-empty array of tool names')
 
-        const state = stateFor(agent)
+        const state = ensureState(agent)
         // What the step can call right now (the restriction is still applied).
         const visibleNow = agentView(agent)
 
@@ -560,7 +582,7 @@ export function apply(ctx, rawConfig) {
         },
         execute: async (_args, exec) => {
           const agent = exec ? exec.agent : undefined
-          const state = activatedOf(agent)
+          const state = agent === undefined ? undefined : ensureState(agent)
           globalDefinitions()
           const view = agent === undefined ? new Set() : agentView(agent)
           const pool = poolFor(agent)
@@ -616,5 +638,32 @@ export function apply(ctx, rawConfig) {
     } catch (error) {
       warn('could not register the deferred-tool prompt section', error)
     }
+  }
+
+  // Re-attach to agents that were already live when this instance loaded: a
+  // plugin update or hot reload releases every restriction, and `agent/created`
+  // will never fire again for those sessions. `previouslyDeclared` keeps tools
+  // their log already announced callable, so this only restores the hiding the
+  // conversation never saw. Runs last so the snapshot includes this plugin's own
+  // toolbox tools.
+  try {
+    const service = ctx.get('agents')
+    if (service !== undefined && typeof service.list === 'function') {
+      mutating = true
+      try {
+        for (const agent of service.list()) {
+          if (agent === undefined || agent.id === undefined) continue
+          try {
+            applyRestriction(stateFor(agent))
+          } catch (error) {
+            warn(`could not re-attach to the live agent ${agent.id}`, error)
+          }
+        }
+      } finally {
+        mutating = false
+      }
+    }
+  } catch (error) {
+    warn('could not enumerate live agents on load', error)
   }
 }

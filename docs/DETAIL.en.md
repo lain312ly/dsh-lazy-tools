@@ -24,7 +24,9 @@ The plugin splits the surface into two layers:
    deny-list from every name outside the resident layer, and calls `agent.ctx.tools.restrict({ deny })`. A deny-list,
    not an allow-list: a preset registers its core tools (`read`/`write`/`pwsh`) in its own scope, so they are missing
    from the global registry and an allow-list would hide them too. Deny names only tools the plugin can prove it should
-   hide, and skips the tools this session has already activated when the restriction is rebuilt.
+   hide, and skips the tools this session has already activated when the restriction is rebuilt. On load (enable,
+   update, hot reload) the same pass runs over every live agent in `ctx.agents.list()` — otherwise the restrictions
+   released at unload would never be restored and open sessions would silently run on the full tool surface.
 2. When the model calls `toolbox_load(["name"])`, the plugin lifts the old restriction and reads the agent view again:
    that read is the session's real composed tool set. A name outside it is reported as `unavailable` (mounted by another
    preset, not by this one) instead of being activated — `restrict()` can un-hide a composed tool, never create one.
@@ -90,8 +92,11 @@ are ignored silently).
 
 ## Known limitations
 
-- **Only agents created after activation are restricted.** Sessions that already exist keep the full surface; open a
-  new conversation to see the effect.
+- **How much you save immediately depends on what the session already declared.** On load the plugin walks
+  `ctx.agents.list()` and re-applies the restriction to every live agent, but `resumePreserve` treats every tool the
+  session log already announced as loaded (otherwise the model would hold names it cannot call). A conversation that
+  already saw the full tool table before the plugin was enabled is therefore not hidden retroactively — open a new
+  conversation for the full saving.
 - `tools.restrict()` only reaches tools on the agent's inheritance chain. Tools an agent registers in its own scope
   cannot be named, so the plugin filters them out — an intentional safety bound.
 - `addition-only` routes discard `tool_removal`, so a loaded tool **cannot be hidden again inside the same session**

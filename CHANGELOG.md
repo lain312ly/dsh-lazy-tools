@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-11-18
+
+### Fixed
+
+- **A plugin reload no longer leaves open sessions unrestricted.** Every
+  restriction is destroyed when the plugin unloads, and `agent/created` never
+  fires again for agents that were already live, so an updated or hot-reloaded
+  plugin used to leave those sessions with the full tool surface and no lazy
+  loading at all — until their first `toolbox_*` call made the state appear.
+  On load the plugin now walks `ctx.agents.list()` and re-applies the
+  restriction to every live agent. Observed in a manual `minimal` session
+  (`toolbox_status` first reported `restricted: false`, `composedToolCount: 106`
+  — the process-wide universe — then flipped to `restricted: true` and
+  `composedToolCount: 21` after one load call).
+- **`toolbox_search` / `toolbox_status` / `toolbox_load` self-heal a missing
+  state.** When an agent is seen for the first time outside `agent/created`, the
+  first `toolbox_*` call now applies the restriction before answering, instead
+  of answering from the process-wide universe: search no longer offers tools
+  that `toolbox_load` then reports as `unavailable`.
+
+### Added
+
+- `test/lazy-tools.test.mjs` grows to eight tests: the load-time sweep over
+  existing agents, and search self-healing for an agent the plugin never saw.
+
 ## [0.1.1] — 2026-11-18
 
 ### Fixed
