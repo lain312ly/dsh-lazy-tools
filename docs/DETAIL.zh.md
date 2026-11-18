@@ -58,6 +58,10 @@
     visible: [subagent, web_search]
 ```
 
+常驻层默认值来自作者环境的一份 30 天统计，**装好后请按自己的用量调整**：跑
+`python scripts/tool-census.py --days 30` 得到自己的日均调用次数与 schema 大小，把标为 `resident` 的工具加进
+`visible`，新会话用 `toolbox_status` 核对是否生效（写错的名字会被静默忽略）。
+
 ## 实测数据（测试环境：DSH Desktop 2.0.23-next、`@deepseek-ai/dsh@0.2.2-rc.3`、Windows）
 
 - 基线（未启用插件的新会话）：42 个工具、**39,429 字符**；

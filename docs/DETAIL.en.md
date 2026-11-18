@@ -65,6 +65,11 @@ Example — keep `subagent` and `web_search` resident too:
     visible: [subagent, web_search]
 ```
 
+The default resident layer comes from a 30-day census of the author's machine, so **tune it to your own usage after
+installing**: run `python scripts/tool-census.py --days 30` to get your own calls-per-day and schema sizes, add the
+tools it marks `resident` to `visible`, and confirm the result with `toolbox_status` in a new session (unknown names
+are ignored silently).
+
 ## Measured (DSH Desktop 2.0.23-next, `@deepseek-ai/dsh@0.2.2-rc.3`, Windows)
 
 - Baseline session without the plugin: 42 tools, **39,429 characters**.

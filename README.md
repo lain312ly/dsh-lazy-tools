@@ -96,6 +96,41 @@ github:lain/dsh-lazy-tools#v0.1.0
 | `statusTool` | `true` | 是否注册 `toolbox_status` |
 | `resumePreserve` | `true` | 续聊时把历史里已声明的工具视为已加载 |
 
+## 按自己的情况调常驻层（重要）
+
+**默认的 17 个常驻工具是作者按自己机器的一份 30 天统计挑的**（200 个会话、17,166 次工具调用），你的工具组合几乎肯定不一样：你可能没有 `job_*`、可能天天用 `subagent`、可能装了 20 个 MCP 工具。所以装好之后建议花两分钟核一遍。
+
+三步：
+
+1. **看自己的真实调用分布**（只读，不写任何文件）：
+
+   ```bash
+   python scripts/tool-census.py --days 30
+   ```
+
+   输出每个工具的叫用次数、日均次数、schema 字符数，以及 `resident` / `defer` 建议。判定规则：
+   - 日均 ≥3 次且 schema ≤1500 字符 → `resident`（常驻，省的加载步骤比省下的字符更值钱）
+   - 日均 ≥50 次 → 无论 schema 多大都 `resident`（比如 `pwsh` 3.5k 字符，但一天用 100 次）
+   - 其余 → `defer`（留在延迟层，需要时 `toolbox_load` 一次）
+   - `run_code` 永远常驻且不能写进 `visible`；`toolbox_*` 三件套自动可用
+
+2. **把你确实每次都要用的写进 `visible`**：
+
+   ```yaml
+   - id: lazy-tools
+     config:
+       visible: [present, send_message, web_search]
+   ```
+
+3. **新开一个会话核对**：调 `toolbox_status`，看返回的 `visible` 是否包含你加的名字、`awaitingCount` 是否下降。写错的名字会被静默忽略。
+
+几条实操建议：
+
+- **延迟层最划算的是「schema 大、频率低」的工具**（`subagent` 2.1k、`cua_driver_native__*` 6.6k、`office_*`、`workflow`）——它们一年也用不了几次，却每次都在占位置；
+- **不要为了省字符把高频小工具藏起来**：`read`/`grep`/`todo_write` 这种几百字符、一天几十次的，藏了只会多一步加载；
+- 统计窗口里可能包含**已经卸载的插件**（`ops_*`、`compress` 之类），以 `toolbox_status` 的 `awaiting` 名单为准；
+- 连「延迟工具目录」提示词段都不想要可以设 `promptSection: false`，但模型就不知道还有哪些工具可加载，只会在明确知道名字时才 `toolbox_load`——通常不建议。
+
 ## 工具
 
 | 工具 | 作用 |
@@ -192,6 +227,7 @@ dsh-lazy-tools/
 ```bash
 npm run check     # node --check + 清单/资源自检
 npm run verify    # 读取 ~/.dsh/sessions 最新日志，断言首个工具表足够小且出现 tool_addition
+python scripts/tool-census.py --days 30   # 按自己的历史调用频率，给出 visible 建议
 ```
 
 `verify` 需要 Python 3.10+ 与 `zstandard`（`pip install zstandard`），只读取 `*.jsonl.zstd` 会话日志，不写任何文件；

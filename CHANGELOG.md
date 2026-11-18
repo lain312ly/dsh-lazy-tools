@@ -32,6 +32,9 @@ First public release.
   `ctx.effect`.
 - `scripts/check-package.mjs` — dependency-free manifest/asset validator, run by
   `npm run check` and by CI.
+- `scripts/tool-census.py` — reads your own session logs and suggests a `visible`
+  list from real call frequency and schema size, because the shipped resident
+  layer reflects one machine's usage.
 - `scripts/verify-session-tools.py` — reads zstd session logs and asserts the
   first `request/header` stayed small while a `tool_addition` block appeared.
 
