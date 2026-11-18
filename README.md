@@ -15,7 +15,7 @@
 
 `dsh-lazy-tools` 把工具面拆成两层：
 
-- **常驻层**：按本机近 30 天 200 个会话、17,166 次工具调用的统计挑选，非延迟工具里月调用 ≥100 次且 schema <1.5k 字符的保留常驻
+- **常驻层**：按参考环境近 30 天 200 个会话、17,166 次工具调用的统计挑选，非延迟工具里月调用 ≥100 次且 schema <1.5k 字符的保留常驻
   （`read` `write` `edit` `glob` `grep` `pwsh` `bash` `read_image` `web_fetch` `todo_write` `ask_user_question` `skill`
   `present` `job_list` `job_output` `job_kill` `exit_plan_mode`），可用 `visible` 增补；
 - **延迟层**：其余全部已安装工具。它们不在初始工具表里，只在系统提示词里留一段紧凑目录，模型用 `toolbox_search` 查找、
