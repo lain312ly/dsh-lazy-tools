@@ -11,7 +11,7 @@
 > It never makes a tool unavailable: it only changes when a tool appears in the tool table, and the model can restore
 > any hidden tool in one step.
 >
-> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.4`**
+> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.5`**
 
 ## 它解决的问题
 
@@ -52,10 +52,10 @@
 **方式一：GUI**（推荐）— 打开插件管理，安装 bundle，填：
 
 ```
-github:lain312ly/dsh-lazy-tools#v0.1.4
+github:lain312ly/dsh-lazy-tools#v0.1.5
 ```
 
-**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.4` 这个 bundle」，
+**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.5` 这个 bundle」，
 它会调用 `plugin_manager` 的 `install_bundle`（target 同上）。
 
 **方式三：手动** — 往 `~/.dsh/profiles/<profile>/package.json` 加依赖与 bundle 条目：
@@ -63,7 +63,7 @@ github:lain312ly/dsh-lazy-tools#v0.1.4
 ```json
 {
   "dependencies": {
-    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.4"
+    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.5"
   },
   "dsh": {
     "profile": {
@@ -304,14 +304,14 @@ DSH_HOME 不在默认位置时用 `--sessions <path>` 指定。
 只通过 GitHub tag 分发（没有发 npm：`npm publish` 要求 OTP，见 0.1.4 的说明）：
 
 ```bash
-# 1) 改 package.json 的 version，更新 CHANGELOG
+# 1) 改 package.json 的 version，更新 CHANGELOG，并把上面的安装片段指到新版本
 npm run check && npm test
-git add -A && git commit -m "release: 0.1.5"
-git tag v0.1.5
+git add -A && git commit -m "release: 0.1.6"
+git tag v0.1.6
 git push origin main --tags
 ```
 
-安装方用 `github:lain312ly/dsh-lazy-tools#v0.1.5` 即可；`package.json` 保持 `private: true`，避免误发 npm。
+安装方用 `github:lain312ly/dsh-lazy-tools#v0.1.6` 即可；`package.json` 保持 `private: true`，避免误发 npm。
 
 ## License
 
