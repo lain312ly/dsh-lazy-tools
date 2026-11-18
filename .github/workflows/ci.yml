@@ -23,6 +23,11 @@ jobs:
       - name: Package self-check
         run: npm run check
 
+      # Behaviour: hiding, activation, the unavailable bucket, tokenised search,
+      # cross-preset isolation, preset-switch cleanup.
+      - name: Behaviour tests
+        run: npm test
+
       # The verification helper is not executed here: it needs local session
       # logs and the zstandard package. Only its syntax is checked.
       - name: Check verification helper syntax

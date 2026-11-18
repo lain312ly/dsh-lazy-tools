@@ -1,6 +1,6 @@
 {
   "name": "dsh-lazy-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Cache-friendly progressive tool disclosure for DeepSeek Harness: keep rarely used tools out of every request and activate them on demand through the DeepSeek tool_addition channel.",
@@ -48,6 +48,7 @@
   },
   "scripts": {
     "check": "node --check index.js && node scripts/check-package.mjs",
+    "test": "node --test test/lazy-tools.test.mjs",
     "verify": "python scripts/verify-session-tools.py --check --max-tools 20 --max-chars 16000 --require-tools read,write,pwsh --expect-addition"
   },
   "dsh": {

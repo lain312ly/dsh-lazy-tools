@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-11-18
+
+### Fixed
+
+- **`toolbox_load` no longer "activates" tools the agent never had.** It used to
+  consult the process-wide tool universe, which accumulates tools observed from
+  every session and the global registry. In a `minimal` session it reported
+  `activated: ["subagent"]` for a preset that mounts no `subagent`, and the very
+  next call failed with `unknown tool "subagent"` (`ToolNotFoundError`) — 15 such
+  failures in one 40-step session. Loads now decide against the calling agent's
+  own composed tool set (read with the restriction lifted), report
+  `unavailable` for names mounted by another preset, and leave the tool table
+  untouched for them.
+- **`toolbox_search` matches multi-word queries.** It compared the whole query as
+  one substring, so `"web search"`, `"spawn subagent"` or any sentence returned
+  `total: 0`. Queries are now tokenised on non-word characters and ranked with
+  name hits before description hits.
+- **Recompositions drop stale activations.** Switching a session to a preset that
+  no longer mounts an activated tool now removes it from the activation set and
+  reports it in `toolbox_status.dropped`, instead of leaving a phantom entry.
+
+### Added
+
+- `toolbox_search` results stay inside the calling agent's composition, so a
+  preset never advertises another preset's tools.
+- `toolbox_status` reports `composedToolCount` (the agent's own surface) and
+  `dropped` (activations removed by the last recomposition).
+- `test/lazy-tools.test.mjs`: six behavioural tests with an in-memory harness
+  (`npm test`), covering hiding, activation, the unavailable bucket, tokenised
+  search, cross-preset isolation and preset-switch cleanup.
+
 ## [0.1.0] — 2026-11-18
 
 First public release.

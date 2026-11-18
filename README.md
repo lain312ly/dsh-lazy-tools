@@ -135,9 +135,9 @@ github:lain/dsh-lazy-tools#v0.1.0
 
 | 工具 | 作用 |
 | --- | --- |
-| `toolbox_search(query, limit?)` | 在「已安装但未加载」的工具里按名称/描述搜索，返回名称、一句话描述、是否已加载 |
-| `toolbox_load(names[])` | 激活指定工具；返回参数名与必填项，下一步即可调用 |
-| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate` 能力、常驻/已加载/未加载清单 |
+| `toolbox_search(query, limit?)` | 在**当前预设能拿到的**已隐藏工具里按分词后的关键词搜索，返回名称、一句话描述 |
+| `toolbox_load(names[])` | 激活指定工具；返回参数名与必填项，下一步即可调用。本预设没装配的名字会出现在 `unavailable` 里，不会被伪造成"已激活" |
+| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate` 能力、`composedToolCount`（本会话真实工具面）、常驻/已加载/未加载清单、`dropped`（因切预设而失效的激活） |
 
 名字已经知道时只需一步：`toolbox_load(["schedule_list"])`。`toolbox_search` 是「只知道意图、不知道名字」时的兜底。
 
@@ -159,13 +159,26 @@ github:lain/dsh-lazy-tools#v0.1.0
 
 完整证据（22 条事实、10 项自检、复现命令）见 [docs/VERIFICATION.md](docs/VERIFICATION.md)。
 
+**PTC 预设（`ptc`）实测**（2026-11-18，同一任务跑两次 + 一次对照）：`request/header.tools` 恒为 `[run_code]`，
+工具面在系统提示词的 `ToolArgsMap` SDK 块里——对照 57,065 字符 / 31 个工具，开插件后 **19,907 字符 / 16 个工具
+（−65.1% / −59% 系统提示词）**；每步平均 input token 从 1,506.9 降到 891.3 / 1,123.3，三个会话的工件（测试、报告）
+全部通过。细节与偏差记录见 `_lazy-test/EVAL.md`（工作区，不随仓库发布）。
+
 ## 兼容性
+
+**先看你的预设是哪种工具呈现方式**，这决定插件能省在哪里、怎么省：
+
+| 呈现方式 | 典型预设 | 模型看到的工具面 | 插件的作用 |
+| --- | --- | --- | --- |
+| **native**（默认） | `standard`、`cordis`、`minimal`，以及没声明 executor 的自定义预设 | 每个工具一个 schema，进 `request/header.tools` | 首条请求直接少发几十个 schema；`toolbox_load` 走**增量 `tool_addition`**，追加而不重写前缀 |
+| **PTC** | `ptc`（挂 `tool-executor-ptc`）、`flash-lean-ptc-v3`（挂 `tool-presentation: {mode: ptc}`） | 只有 `run_code`，其余工具以 `ToolArgsMap` SDK 块写在**系统提示词**里 | 省的是系统提示词（实测 −59%）；header 不变，**没有 `tool_addition` 可用**，每次 load 会改写一次系统提示词 → 触发一次前缀缓存失效，建议集中加载 |
 
 - 在 `@deepseek-ai/dsh@0.2.2-rc.3` 上验证；插件只用到 `ctx.tools.restrict`、`ctx.systemPrompt.section`、
   `ctx.on('agent/created' | 'agent/disposed' | 'tools/change')`、`session.toolHistory()`、`agent.model.current()` 这些公开面；
-- 路由的 `toolUpdate` 能力决定是否存在增量通道：
-  - `addition-only` / `in-history`：`toolbox_load` 走 `tool_addition`，这是省字符的主路径；
-  - `null`：加载仍然有效，只是工具在下一份完整工具表里生效。
+- native 呈现下路由的 `toolUpdate` 能力决定增量通道形态：`addition-only` / `in-history` 走 `tool_addition`；
+  `null` 时加载仍然有效，只是工具在下一份完整工具表里生效；
+- `tools.restrict()` 只能**取消隐藏**本预设已装配的工具，不能创造工具——所以 `toolbox_load` 只对本会话的工具面生效，
+  其余名字会返回 `unavailable`（这就是 0.1.1 修掉的那个坑）；
 - 其它平台（macOS / Linux）未实测；`bash` 只在存在该工具时才会留在常驻层，Windows 上不会出现。
 
 ## 已知限制
@@ -216,8 +229,11 @@ dsh-lazy-tools/
 │  ├─ DETAIL.zh.md             # 中文设计文档（插件详情页）
 │  ├─ DETAIL.en.md             # 英文设计文档
 │  └─ VERIFICATION.md          # 实测证据与复现步骤
+├─ test/
+│  └─ lazy-tools.test.mjs      # 内存 harness 的行为测试（npm test）
 ├─ scripts/
 │  ├─ check-package.mjs        # 清单/资源自检（npm run check）
+│  ├─ tool-census.py           # 按自己的用量算 visible 建议
 │  └─ verify-session-tools.py  # 从会话日志验证效果
 └─ .github/workflows/ci.yml
 ```
@@ -226,6 +242,7 @@ dsh-lazy-tools/
 
 ```bash
 npm run check     # node --check + 清单/资源自检
+npm test          # 内存 harness 行为测试：隐藏/激活/unavailable/分词搜索/切预设清理
 npm run verify    # 读取 ~/.dsh/sessions 最新日志，断言首个工具表足够小且出现 tool_addition
 python scripts/tool-census.py --days 30   # 按自己的历史调用频率，给出 visible 建议
 ```

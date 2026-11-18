@@ -22,11 +22,19 @@
 1. `agent/created` 时，插件先读取 **该 agent 自己的工具视图**（此时还没有本插件的限制），把「不在常驻层」的名字组成 deny 表，
    再调用 `agent.ctx.tools.restrict({ deny })`。用 deny 而不是 allow：preset 以 scope 局部注册的核心工具（`read`/`write`/`pwsh` 等）
    不在全局注册表里，allow-list 会连它们一起藏掉；deny 只针对确实该隐藏的名字，且重建时会跳过本会话已激活的工具；
-2. 模型调用 `toolbox_load(["name"])` 后，插件把名字加入该会话的激活集合，先撤销旧限制、重新读取该 agent 的工具视图，再按新集合重建 deny 表；
+2. 模型调用 `toolbox_load(["name"])` 后，插件先撤销旧限制、重新读取该 agent 的工具视图，得到**该会话真实装配的工具面**；
+   名字不在其中就返回 `unavailable`（只被别的预设装配、本会话没有），不会伪造成"已激活"——`restrict()` 只能取消隐藏，不能创造工具；
 3. 工具表发生变化，agent-loop 自动写入一条 `developer/message`（source: `tool-registry`，含 `tool-addition` 块）；
 4. 路由声明了 `toolUpdate` 能力时，DeepSeek 适配器把该块序列化为 `tool_addition`，并给本次请求加
    `anthropic-beta` 的 tool-changes 头；不是重写前缀，而是追加激活块；
-5. 若路由没有声明该能力，DSH 会剥掉 developer 消息、让工具直接在下一次工具表里生效 —— 功能仍然可用，只是没有增量通道。
+5. 若路由没有声明该能力，DSH 会剥掉 developer 消息、让工具直接在下一次工具表里生效 —— 功能仍然可用，只是没有增量通道；
+6. 切预设、装卸插件会触发 `tools/change`：插件重算工具面，已激活但新预设不再装配的名字从激活集合里移除，并出现在
+   `toolbox_status.dropped`。
+
+**注意呈现方式**：以上第 3–5 步只发生在 **native 呈现**（`standard`/`cordis`/`minimal` 以及没有声明 executor 的自定义预设）——
+工具逐个进 `request/header.tools`，才有增量可追加。**PTC 呈现**（`ptc`、`flash-lean-ptc-v3`）下 header 恒为 `[run_code]`，
+工具面在系统提示词的 `ToolArgsMap` SDK 块里，因此没有 `tool-addition`；每次 load 会让下一次请求的系统提示词变大，
+相当于重写前缀（缓存失效），应集中加载。
 
 激活状态不落盘：恢复会话时从 `session.toolHistory()` 推导（会话日志是唯一真相），因此续聊、fork 都一致。
 为避免「续聊后突然全隐藏」，`resumePreserve` 默认开启：会话历史里已声明过的非常驻工具会被视为已加载。
@@ -35,9 +43,9 @@
 
 | 工具 | 作用 |
 | --- | --- |
-| `toolbox_search(query, limit?)` | 在「已安装但未加载」的工具里按名称/描述搜索，返回名称、一句话描述、是否已加载 |
-| `toolbox_load(names[])` | 激活指定工具；返回参数名与必填项，下一步即可调用 |
-| `toolbox_status()` | 诊断：当前 provider/model、路由 `toolUpdate` 能力、常驻/已加载/未加载清单 |
+| `toolbox_search(query, limit?)` | 在当前预设装配、但被隐藏的工具里按分词后的关键词搜索 |
+| `toolbox_load(names[])` | 激活指定工具；返回参数名与必填项。本会话没装配的名字进 `unavailable`，安装里根本不存在的进 `unknown` |
+| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate`、`composedToolCount`、常驻/已加载/未加载、`dropped` |
 
 ## 配置（`cordis.patch.yml` 的 `lazy-tools` 行）
 

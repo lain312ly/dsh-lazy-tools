@@ -188,8 +188,16 @@ export function apply(ctx, rawConfig) {
     }
   }
 
-  /** Rebuild one agent's restriction from its live view. */
-  function applyRestriction(state) {
+  /** Lift the previous restriction and read this agent's own composed tool set.
+   *
+   * The read must happen with the restriction lifted, otherwise the plugin would
+   * observe its own hiding as "this tool does not exist". The resulting snapshot
+   * is the only authority on what this agent can ever call: `tools.restrict()`
+   * can un-hide a composed tool, it can never create one that the preset did not
+   * mount. Activations that disappeared from the composition (a preset switch,
+   * a disabled plugin) are dropped here and reported through `dropped`.
+   */
+  function liftRestriction(state) {
     try {
       state.dispose?.()
     } catch (error) {
@@ -198,8 +206,24 @@ export function apply(ctx, rawConfig) {
     state.dispose = undefined
     const snapshot = snapshotFor(state.agent)
     state.snapshot = snapshot
-    const dispose = restrictAgent(state, denyFor(snapshot, state.activated))
-    state.dispose = dispose
+    state.dropped = new Set()
+    for (const name of [...state.activated]) {
+      if (snapshot.has(name)) continue
+      state.activated.delete(name)
+      state.dropped.add(name)
+    }
+    return snapshot
+  }
+
+  /** Re-apply the restriction from the current snapshot and activation set. */
+  function settleRestriction(state) {
+    state.dispose = restrictAgent(state, denyFor(state.snapshot, state.activated))
+  }
+
+  /** Rebuild one agent's restriction from its live view. */
+  function applyRestriction(state) {
+    liftRestriction(state)
+    settleRestriction(state)
   }
 
   /** Tool names a resumed session already declared, folded from its log. */
@@ -221,7 +245,7 @@ export function apply(ctx, rawConfig) {
   function stateFor(agent) {
     const existing = agents.get(agent.id)
     if (existing !== undefined) return existing
-    const state = { agent, activated: new Set(), snapshot: new Map(), dispose: undefined }
+    const state = { agent, activated: new Set(), snapshot: new Map(), dispose: undefined, dropped: new Set() }
     agents.set(agent.id, state)
     if (!config.resumePreserve) return state
     const declared = previouslyDeclared(agent)
@@ -237,11 +261,6 @@ export function apply(ctx, rawConfig) {
     return agents.get(agent.id)
   }
 
-  function isActivated(agent, toolName) {
-    const state = activatedOf(agent)
-    return state !== undefined && state.activated.has(toolName)
-  }
-
   /** The agent's currently callable tool names, as the step sees them. */
   function agentView(agent) {
     try {
@@ -252,18 +271,31 @@ export function apply(ctx, rawConfig) {
     }
   }
 
+  /** The tool definitions this agent could ever call, hidden or not.
+   *
+   * An agent's own composition is authoritative; the process-wide universe is
+   * only a fallback for calls without an agent context (the prompt catalog).
+   * Using the universe here would offer tools that another preset mounted and
+   * this agent never had, so `toolbox_load` would report them as activated and
+   * the model would then get `unknown tool` from the platform.
+   */
+  function poolFor(agent) {
+    const state = activatedOf(agent)
+    if (state !== undefined && state.snapshot.size > 0) return state.snapshot
+    return universe
+  }
+
   /** Universe entries this plugin hides from at least one agent. */
   function awaitingNames(agent) {
-    const view = agent === undefined ? undefined : agentView(agent)
     const state = activatedOf(agent)
+    const pool = poolFor(agent)
     const names = []
-    for (const name of universe.keys()) {
+    for (const name of pool.keys()) {
       if (name === RUN_CODE || visible.has(name) || TOOLBOX.includes(name)) continue
       if (state !== undefined && state.activated.has(name)) continue
-      if (view !== undefined && view.has(name)) continue
       names.push(name)
     }
-    return names
+    return names.sort()
   }
 
   function catalogText() {
@@ -272,8 +304,10 @@ export function apply(ctx, rawConfig) {
     if (names.length === 0) return ''
     const shown = names.slice(0, 80).join(', ')
     const more = names.length > 80 ? `, and ${names.length - 80} more` : ''
-    return 'Deferred tools (installed but not loaded): ' + shown + more + '.\n'
+    return 'Deferred tools seen in this installation: ' + shown + more + '.\n'
       + 'They are intentionally absent from your tool list to save context. '
+      + 'Not every one of them belongs to your preset: toolbox_search only returns the ones you can actually load, '
+      + 'and toolbox_load reports the rest as unavailable. '
       + 'Call toolbox_search(query) to inspect a candidate, then toolbox_load(names) to activate it before use.'
   }
 
@@ -370,29 +404,35 @@ export function apply(ctx, rawConfig) {
           ? args.limit
           : config.searchLimit
         const limit = Math.min(requested, 50)
-        const needle = query.toLowerCase()
+        const tokens = query.toLowerCase().split(/[^a-z0-9_]+/).filter(token => token.length > 0)
+        if (tokens.length === 0) throw new Error('query must contain at least one searchable word')
         const agent = exec ? exec.agent : undefined
-        globalDefinitions()
-        if (agent !== undefined) snapshotFor(agent)
+        const state = activatedOf(agent)
+        const pool = poolFor(agent)
+        // Only surface tools the step cannot already call.
         const view = agent === undefined ? new Set() : agentView(agent)
         const results = []
-        for (const [toolName, definition] of universe) {
+        for (const [toolName, definition] of pool) {
           if (toolName === RUN_CODE || visible.has(toolName) || TOOLBOX.includes(toolName)) continue
           if (view.has(toolName)) continue
+          if (state !== undefined && state.activated.has(toolName)) continue
           const description = typeof definition.description === 'string' ? definition.description : ''
-          const nameHit = toolName.toLowerCase().includes(needle)
-          const descriptionHit = description.toLowerCase().includes(needle)
-          if (!nameHit && !descriptionHit) continue
+          const haystack = `${toolName} ${description}`.toLowerCase()
+          const nameLower = toolName.toLowerCase()
+          const hits = tokens.filter(token => haystack.includes(token))
+          if (hits.length === 0) continue
+          const nameHit = hits.some(token => nameLower.includes(token))
           results.push({
             name: toolName,
-            score: nameHit ? 0 : 1,
+            score: (nameHit ? 0 : 10) - hits.length,
             description: description.length > 160 ? `${description.slice(0, 157)}...` : description,
-            loaded: isActivated(agent, toolName),
+            loaded: false,
           })
         }
         results.sort((left, right) => left.score - right.score || left.name.localeCompare(right.name))
         return {
           query,
+          tokens,
           total: results.length,
           results: results.slice(0, limit).map(({ name: toolName, description, loaded }) => ({ name: toolName, description, loaded })),
         }
@@ -434,18 +474,34 @@ export function apply(ctx, rawConfig) {
         if (requested.length === 0) throw new Error('names must be a non-empty array of tool names')
 
         const state = stateFor(agent)
-        snapshotFor(agent)
-        const view = agentView(agent)
+        // What the step can call right now (the restriction is still applied).
+        const visibleNow = agentView(agent)
+
+        // Decide against the agent's own composed tool set, never the process-wide
+        // universe: `tools.restrict()` can un-hide a composed tool but cannot
+        // create one, so a name outside the composition must not be "activated".
+        mutating = true
+        let snapshot
+        try {
+          snapshot = liftRestriction(state)
+        } finally {
+          mutating = false
+        }
+
         const activated = []
         const alreadyAvailable = []
+        const unavailable = []
         const unknown = []
         for (const toolName of requested) {
-          if (view.has(toolName) || TOOLBOX.includes(toolName)) {
+          if (TOOLBOX.includes(toolName) || visibleNow.has(toolName)) {
             alreadyAvailable.push(toolName)
             continue
           }
-          if (!universe.has(toolName)) {
-            unknown.push(toolName)
+          if (!snapshot.has(toolName)) {
+            // Known to the installation (another preset mounted it) but not part
+            // of this agent's composition: hiding is reversible, mounting is not.
+            if (universe.has(toolName)) unavailable.push(toolName)
+            else unknown.push(toolName)
             continue
           }
           if (state.activated.has(toolName)) {
@@ -456,23 +512,23 @@ export function apply(ctx, rawConfig) {
           activated.push(toolName)
         }
 
-        if (activated.length > 0) {
-          mutating = true
-          try {
-            applyRestriction(state)
-          } finally {
-            mutating = false
-          }
+        mutating = true
+        try {
+          settleRestriction(state)
+        } finally {
+          mutating = false
         }
 
         const loaded = activated.map(toolName => ({
           name: toolName,
-          ...parameterDigest(universe.get(toolName)),
+          ...parameterDigest(snapshot.get(toolName)),
         }))
         return {
           activated,
           alreadyAvailable,
+          unavailable,
           unknown,
+          dropped: [...state.dropped],
           loaded,
           note: activated.length > 0
             ? 'Activated tools are callable from the next step; their definitions arrive through the tool update channel.'
@@ -506,8 +562,8 @@ export function apply(ctx, rawConfig) {
           const agent = exec ? exec.agent : undefined
           const state = activatedOf(agent)
           globalDefinitions()
-          if (agent !== undefined) snapshotFor(agent)
           const view = agent === undefined ? new Set() : agentView(agent)
+          const pool = poolFor(agent)
           const awaiting = awaitingNames(agent)
           const selection = agent !== undefined && agent.model !== undefined && typeof agent.model.current === 'function'
             ? agent.model.current()
@@ -532,8 +588,10 @@ export function apply(ctx, rawConfig) {
             capabilityError,
             restricted: state !== undefined && state.dispose !== undefined,
             agentToolCount: agent !== undefined ? view.size : null,
-            visible: [...visible].filter(toolName => universe.has(toolName)),
+            composedToolCount: agent !== undefined ? pool.size : null,
+            visible: [...visible].filter(toolName => pool.has(toolName)),
             activated: state !== undefined ? [...state.activated] : [],
+            dropped: state !== undefined ? [...state.dropped] : [],
             awaitingCount: awaiting.length,
             awaiting,
           }

@@ -25,14 +25,23 @@ The plugin splits the surface into two layers:
    not an allow-list: a preset registers its core tools (`read`/`write`/`pwsh`) in its own scope, so they are missing
    from the global registry and an allow-list would hide them too. Deny names only tools the plugin can prove it should
    hide, and skips the tools this session has already activated when the restriction is rebuilt.
-2. When the model calls `toolbox_load(["name"])`, the name joins that session's activation set, the old restriction is
-   lifted, the agent view is read again, and the deny-list is rebuilt from the new set.
+2. When the model calls `toolbox_load(["name"])`, the plugin lifts the old restriction and reads the agent view again:
+   that read is the session's real composed tool set. A name outside it is reported as `unavailable` (mounted by another
+   preset, not by this one) instead of being activated — `restrict()` can un-hide a composed tool, never create one.
 3. The tool registry changed, so the agent loop records a `developer/message` (source `tool-registry`) carrying a
    `tool-addition` block.
 4. When the route declares the `toolUpdate` capability, the DeepSeek adapter serializes that block as `tool_addition`
    and adds the tool-changes `anthropic-beta` header — an appended activation block instead of a rewritten prefix.
 5. When the route does not declare it, DSH strips the developer message and the tool simply appears in the next full
    tool table: the feature still works, it just saves the initial table instead of an incremental channel.
+6. A preset switch or a plugin enable/disable raises `tools/change`: the plugin recomposes, drops activations the new
+   composition no longer mounts, and reports them in `toolbox_status.dropped`.
+
+**Presentation matters.** Steps 3–5 only happen under the **native presentation** (`standard`, `cordis`, `minimal`, and
+custom presets that declare no executor): every tool goes into `request/header.tools`, so there is something to append to.
+Under the **PTC presentation** (`ptc`, `flash-lean-ptc-v3`) the header is always `[run_code]` and the tool surface lives in
+the system prompt as a `ToolArgsMap` SDK block, so no `tool-addition` exists; each load grows the next request's system
+prompt and therefore rewrites the prefix (a cache miss). Load in batches there.
 
 Activation is never persisted: a resumed session derives it from `session.toolHistory()` (the session log is the source
 of truth), so continuation and fork behave the same. `resumePreserve` (on by default) treats tools already declared in
@@ -42,9 +51,9 @@ the session as loaded, so a resumed conversation does not lose half of its surfa
 
 | Tool | Purpose |
 | --- | --- |
-| `toolbox_search(query, limit?)` | Search installed-but-unloaded tools by name or description; returns name, one-line description, loaded flag |
-| `toolbox_load(names[])` | Activate tools for the calling agent; returns parameter names and required fields so the next step can call them |
-| `toolbox_status()` | Diagnostics: provider/model, route `toolUpdate` capability, resident / activated / awaiting lists |
+| `toolbox_search(query, limit?)` | Search the tools this preset composed but the plugin hides, tokenising the query |
+| `toolbox_load(names[])` | Activate tools for the calling agent; returns parameter names and required fields. Names this session never composed land in `unavailable`; names the installation does not know land in `unknown` |
+| `toolbox_status()` | Diagnostics: provider/model, route `toolUpdate`, `composedToolCount`, resident / activated / awaiting / dropped |
 
 ## Configuration (the `lazy-tools` row in `cordis.patch.yml`)
 

@@ -112,3 +112,25 @@ That session reported `restricted: true`, `toolUpdate: "addition-only"`, `visibl
 - **In-session unload.** `addition-only` routes discard `tool_removal`, so hiding an already loaded tool again is
   intentionally unsupported and untested. Uninstalling the bundle is unaffected and was verified (41 tools / 38,941
   characters after disabling).
+
+## 0.1.1 regression (2026-11-18)
+
+The failure that motivated 0.1.1 was observed in a `minimal` session (session `c70fa2b9`): `toolbox_load` returned
+`activated: ["subagent"]` for a preset that mounts no `subagent`, and the next call failed with
+`Error: unknown tool "subagent"` (`ToolNotFoundError`). The same session produced 15 `UNKNOWN_TOOL` results across
+`subagent`, `subagent_fork`, `list_agents`, `list_subagent_models`, `wait_agent`, `read`, `glob`, `grep` and
+`cua_driver_native__list_apps`; only `working_directory` (a genuinely composed tool) entered the tool table.
+
+Fixes and their evidence:
+
+| Check | Evidence |
+| --- | --- |
+| `toolbox_load` decides against the agent's own composition | child session `5835a2bd` (cordis, native): `toolbox_load(["office_render"])` → `unknown`, nothing activated, no follow-up error |
+| tokenised `toolbox_search` | same session: `toolbox_search("web search")` → `tokens: ["web","search"]`, 3 hits including `web_search` (`total: 0` before) |
+| activation still works and travels the incremental channel | same session: `toolbox_load(["list_agents"])` → `activated`, header 19 → 20 tools, `developer/message(tool-addition: list_agents)`, `list_agents()` returned 10 agents |
+| recomposition drops stale activations | unit test `test/lazy-tools.test.mjs`: preset switch removes `subagent` from `activated` and reports it in `dropped` |
+| no restriction-caused tool errors | `UNKNOWN_TOOL` count in `5835a2bd`: 0 |
+
+Unit tests: `npm test` → 6/6 pass. The `unavailable` bucket (a tool another preset mounted but this agent did not) is
+covered by the unit test; the live session above exercised the `unknown` bucket because no other preset had touched that
+plugin instance yet.
