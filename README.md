@@ -104,17 +104,54 @@ github:lain312ly/dsh-lazy-tools#v0.1.4
 
 三步：
 
-1. **看自己的真实调用分布**（只读，不写任何文件）：
+1. **用自带的普查脚本看自己的真实调用分布**（只读：只打开 `~/.dsh/sessions/**/session.v4.jsonl.zstd`，
+   不联网、不写任何文件）：
 
    ```bash
-   python scripts/tool-census.py --days 30
+   python scripts/tool-census.py            # 最近 30 天，日均 ≥3 次算 resident
+   python scripts/tool-census.py --days 60 --min-calls-per-day 5
+   python scripts/tool-census.py --json     # 机器可读，便于自己再加工
    ```
 
-   输出每个工具的叫用次数、日均次数、schema 字符数，以及 `resident` / `defer` 建议。判定规则：
+   | 参数 | 默认 | 作用 |
+   | --- | --- | --- |
+   | `--days` | `30` | 统计窗口（天） |
+   | `--min-calls-per-day` | `3` | 日均调用低于此值 → `defer` |
+   | `--max-schema-chars` | `1500` | schema 超过此值就不常驻（除非满足下一条） |
+   | `--dominant-calls-per-day` | `50` | 日均高于此值 → 无论 schema 多大都 `resident` |
+   | `--sessions` | `~/.dsh/sessions` | 日志根目录（DSH_HOME 不在默认位置时用） |
+   | `--json` | 关 | 输出完整 JSON（含每个工具的 `rows`） |
+
+   输出示例（本机 2026-11-18 实测节选，`schema` 单位字符）：
+
+   ```
+   # tool census — last 30 days, 188 sessions
+
+   tool                              calls  calls/day   schema  suggestion
+   ----------------------------------------------------------------------------
+   pwsh                               3729      124.3     3543  resident
+   edit                               2307       76.9     1195  resident
+   read                               1993      66.43      462  resident
+   write                               901      30.03      887  resident
+   grep                                636       21.2      726  resident
+   todo_write                          248       8.27      893  resident
+   web_fetch                           140       4.67      256  resident
+   send_message                         89       2.97      547  defer
+   subagent                             80       2.67     2155  defer
+
+   resident (put these in the plugin's `visible`):
+     pwsh, edit, read, write, grep, todo_write, web_fetch
+   ```
+
+   判定规则：
    - 日均 ≥3 次且 schema ≤1500 字符 → `resident`（常驻，省的加载步骤比省下的字符更值钱）
    - 日均 ≥50 次 → 无论 schema 多大都 `resident`（比如 `pwsh` 3.5k 字符，但一天用 100 次）
    - 其余 → `defer`（留在延迟层，需要时 `toolbox_load` 一次）
    - `run_code` 永远常驻且不能写进 `visible`；`toolbox_*` 三件套自动可用
+
+   > 脚本在仓库的 `scripts/tool-census.py`；从 GitHub 安装的 bundle 里它位于
+   > `~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/`（0.1.5 起随包发布）。
+   > 需要 Python 3.10+ 与 `zstandard`（`pip install zstandard`）。
 
 2. **把你确实每次都要用的写进 `visible`**：
 

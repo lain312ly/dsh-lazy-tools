@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-11-18
+
+### Added
+
+- the two helper scripts now ship with the bundle: `scripts/tool-census.py` and
+  `scripts/verify-session-tools.py` are in `files`, so a bundle installed from a
+  Git tag contains them at
+  `~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/` instead of
+  existing only in a checkout.
+
+### Changed
+
+- documented the census where users actually look for it: README now shows a real
+  30-day output excerpt, the full flag table, the read-only/privacy note, and the
+  installed-bundle path; `docs/DETAIL.*.md` gained the same flag table.
+- the locale descriptions no longer claim "only newly created agents are
+  affected" — they match 0.1.2's load-time re-attach.
+
 ## [0.1.4] — 2026-11-18
 
 ### Changed

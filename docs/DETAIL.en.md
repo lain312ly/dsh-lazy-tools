@@ -81,6 +81,24 @@ installing**: run `python scripts/tool-census.py --days 30` to get your own call
 tools it marks `resident` to `visible`, and confirm the result with `toolbox_status` in a new session (unknown names
 are ignored silently).
 
+The census only reads `~/.dsh/sessions/**/session.v4.jsonl.zstd`; it writes nothing and never touches the network. It
+needs Python 3.10+ and `zstandard` (`pip install zstandard`). It counts dispatches (`tool/call` on native presets,
+`tool/ptc-dispatch` on PTC) and schema characters (from `request/header.tools` of native sessions), marks a tool
+`resident` when it averages at least 3 calls/day with a schema of at most 1500 characters, and always keeps a tool
+averaging 50+ calls/day resident regardless of schema size.
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--days` | `30` | Census window |
+| `--min-calls-per-day` | `3` | Below this average → `defer` |
+| `--max-schema-chars` | `1500` | Larger schemas stay deferred unless dominant |
+| `--dominant-calls-per-day` | `50` | Above this average → `resident` unconditionally |
+| `--sessions` | `~/.dsh/sessions` | Log root |
+| `--json` | off | Machine-readable output |
+
+The script lives at `scripts/tool-census.py` in the repository; in a bundle installed from GitHub it sits at
+`~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/` (shipped since 0.1.5).
+
 ## Measured (DSH Desktop 2.0.23-next, `@deepseek-ai/dsh@0.2.2-rc.3`, Windows)
 
 - Baseline session without the plugin: 42 tools, **39,429 characters**.

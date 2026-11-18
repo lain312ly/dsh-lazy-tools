@@ -1,6 +1,6 @@
 {
   "name": "dsh-lazy-tools",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Cache-friendly progressive tool disclosure for DeepSeek Harness: keep rarely used tools out of every request and activate them on demand through the DeepSeek tool_addition channel.",
@@ -20,7 +20,9 @@
     "icon.svg",
     "LICENSE",
     "README*.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "scripts/tool-census.py",
+    "scripts/verify-session-tools.py"
   ],
   "author": "lain <2510629534@qq.com>",
   "repository": {

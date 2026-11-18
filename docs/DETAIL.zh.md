@@ -72,6 +72,23 @@
 `python scripts/tool-census.py --days 30` 得到自己的日均调用次数与 schema 大小，把标为 `resident` 的工具加进
 `visible`，新会话用 `toolbox_status` 核对是否生效（写错的名字会被静默忽略）。
 
+普查脚本只读 `~/.dsh/sessions/**/session.v4.jsonl.zstd`，不联网、不写文件；需要 Python 3.10+ 与
+`zstandard`（`pip install zstandard`）。它统计每个工具被调用的次数（native 的 `tool/call` 与 PTC 的
+`tool/ptc-dispatch`）、schema 字符数（取自 native 会话的 `request/header.tools`），按「日均 ≥3 次且
+schema ≤1500 字符」判 `resident`，日均 ≥50 次的工具无论 schema 多大都常驻。常用参数：
+
+| 参数 | 默认 | 作用 |
+| --- | --- | --- |
+| `--days` | `30` | 统计窗口 |
+| `--min-calls-per-day` | `3` | 低于此值的工具判 `defer` |
+| `--max-schema-chars` | `1500` | schema 超过此值不常驻（除非高频） |
+| `--dominant-calls-per-day` | `50` | 高于此值无条件 `resident` |
+| `--sessions` | `~/.dsh/sessions` | 日志根目录 |
+| `--json` | 关 | 机器可读输出 |
+
+脚本在仓库的 `scripts/tool-census.py`；从 GitHub 安装的 bundle 里位于
+`~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/`（0.1.5 起随包发布）。
+
 ## 实测数据（测试环境：DSH Desktop 2.0.23-next、`@deepseek-ai/dsh@0.2.2-rc.3`、Windows）
 
 - 基线（未启用插件的新会话）：42 个工具、**39,429 字符**；
