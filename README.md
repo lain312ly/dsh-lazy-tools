@@ -1,10 +1,15 @@
 # dsh-lazy-tools
 
+**定位：本插件不改变任何工具的可用性，只改变它何时出现在工具表里** —— 被藏起来的工具，模型下一步就能用
+`toolbox_load` 装回来，不需要人工干预。
+
 > **TL;DR** — A zero-dependency DeepSeek Harness (DSH) bundle that keeps a
 > curated tool surface resident and hides everything else behind a per-agent `tools.restrict({ deny })` restriction.
 > Hidden tools are discovered with `toolbox_search` and activated with `toolbox_load`; the activation travels through
 > the DeepSeek `tool_addition` channel, so no tool definition is ever resent. On the reference profile this cut the
 > per-request tool declarations from **39,429 to 14,496 characters (−63%)** without removing any installed tool.
+> It never makes a tool unavailable: it only changes when a tool appears in the tool table, and the model can restore
+> any hidden tool in one step.
 >
 > Install: **Plugin Manager → Install bundle → `github:lain/dsh-lazy-tools#v0.1.0`**
 
