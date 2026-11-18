@@ -11,7 +11,7 @@
 > It never makes a tool unavailable: it only changes when a tool appears in the tool table, and the model can restore
 > any hidden tool in one step.
 >
-> Install: **Plugin Manager → Install bundle → `github:lain/dsh-lazy-tools#v0.1.3`**
+> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.3`**
 
 ## 它解决的问题
 
@@ -49,21 +49,22 @@
 
 前置条件：DeepSeek Harness Desktop 或 `dsh web`，且会话使用 DeepSeek 路由（只要路由支持工具更新即可，见「兼容性」）。
 
-**方式一：GUI**（推荐）— 打开插件管理，安装 bundle，填：
+**方式一：GUI**（推荐）— 打开插件管理，安装 bundle，填下面任一 target：
 
 ```
-github:lain/dsh-lazy-tools#v0.1.3
+dsh-lazy-tools@0.1.3                                  # npm（需先 npm publish）
+github:lain312ly/dsh-lazy-tools#v0.1.3                # GitHub tag
 ```
 
-**方式二：让 agent 装** — 对 agent 说「安装 `github:lain/dsh-lazy-tools#v0.1.3` 这个 bundle」，它会调用
-`plugin_manager` 的 `install_bundle`（target 同上）。
+**方式二：让 agent 装** — 对 agent 说「安装 `dsh-lazy-tools@0.1.3` 这个 bundle」（或上面的 GitHub 写法），
+它会调用 `plugin_manager` 的 `install_bundle`（target 同上）。
 
 **方式三：手动** — 往 `~/.dsh/profiles/<profile>/package.json` 加依赖与 bundle 条目：
 
 ```json
 {
   "dependencies": {
-    "dsh-lazy-tools": "github:lain/dsh-lazy-tools#v0.1.3"
+    "dsh-lazy-tools": "^0.1.3"
   },
   "dsh": {
     "profile": {
@@ -73,7 +74,8 @@ github:lain/dsh-lazy-tools#v0.1.3
 }
 ```
 
-然后在 profile 目录执行 `pnpm install`（或让 DSH 重启时补装），重启 DSH。
+GitHub 来源把依赖值换成 `github:lain312ly/dsh-lazy-tools#v0.1.3` 即可。然后在 profile 目录执行 `pnpm install`
+（或让 DSH 重启时补装），重启 DSH。
 
 安装后，**新对话立刻**生效；已经开着的会话会在插件加载时被补上限制（0.1.2 起），但如果该会话日志里已经声明过
 全量工具，这些工具会按「已加载」保留（`resumePreserve`，否则模型手里有名字却调不动）。想看到完整的「首请求只剩
@@ -261,6 +263,22 @@ python scripts/tool-census.py --days 30   # 按自己的历史调用频率，给
 DSH_HOME 不在默认位置时用 `--sessions <path>` 指定。
 
 本仓库以链接方式安装（`link:`）时改动立即生效，但要重载 bundle 才会重新加载 JS 模块。
+
+### 发布到 npm
+
+包名 `dsh-lazy-tools` 在 npm 上未被占用（2026-11-18 查 `registry.npmjs.org` → 404），`package.json` 已去掉
+`private: true`，可以直接发：
+
+```bash
+npm login                 # 首次；有 2FA 时 publish 会要 OTP
+npm run check && npm test # 先过本地门禁
+npm pack --dry-run        # 核对 tarball 内容（下面列的就是 files 白名单）
+npm publish               # 0.1.3 → 之后按版本号递增，tag 与 version 保持一致
+```
+
+发布后插件管理里可以直接填 `dsh-lazy-tools@<version>` 安装。tarball 只含 `files` 白名单里的运行时文件
+（`index.js`、patch、locale、docs、icon、README、LICENSE、CHANGELOG），`test/` 与 `scripts/` 不进包；
+重新生成 npm 包不需要 CI，`npm publish` 会读当前工作区。
 
 ## License
 

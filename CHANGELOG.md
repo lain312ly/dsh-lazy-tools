@@ -22,6 +22,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - test: `status visible lists only the tools the step can actually call`, which
   asserts `visible ⊆ callable` and `awaiting ∩ callable = ∅` (nine tests total).
 
+### Changed
+
+- Packaging is publishable: `private` removed from `package.json` and the
+  repository/homepage/bugs URLs point at `github.com/lain312ly/dsh-lazy-tools`.
+  `dsh-lazy-tools` was unused on the public npm registry, so the README install
+  section now lists `dsh-lazy-tools@<version>` as the first target and documents
+  `npm publish` (`npm pack --dry-run` shows the 12-file / 30.8 kB tarball).
+
 ## [0.1.2] — 2026-11-18
 
 ### Fixed

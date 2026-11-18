@@ -1,7 +1,6 @@
 {
   "name": "dsh-lazy-tools",
   "version": "0.1.3",
-  "private": true,
   "type": "module",
   "description": "Cache-friendly progressive tool disclosure for DeepSeek Harness: keep rarely used tools out of every request and activate them on demand through the DeepSeek tool_addition channel.",
   "main": "index.js",
@@ -25,11 +24,11 @@
   "author": "lain <2510629534@qq.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lain/dsh-lazy-tools.git"
+    "url": "git+https://github.com/lain312ly/dsh-lazy-tools.git"
   },
-  "homepage": "https://github.com/lain/dsh-lazy-tools#readme",
+  "homepage": "https://github.com/lain312ly/dsh-lazy-tools#readme",
   "bugs": {
-    "url": "https://github.com/lain/dsh-lazy-tools/issues"
+    "url": "https://github.com/lain312ly/dsh-lazy-tools/issues"
   },
   "keywords": [
     "deepseek-harness",
