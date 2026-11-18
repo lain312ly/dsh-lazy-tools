@@ -282,6 +282,7 @@ dsh-lazy-tools/
 │  ├─ check-package.mjs        # 清单/资源自检（npm run check）
 │  ├─ tool-census.py           # 按自己的用量算 visible 建议
 │  └─ verify-session-tools.py  # 从会话日志验证效果
+├─ CONTRIBUTING.md             # 本地检查与发版流程（维护者文档，不随包发布）
 └─ .github/workflows/ci.yml
 ```
 
@@ -299,19 +300,7 @@ DSH_HOME 不在默认位置时用 `--sessions <path>` 指定。
 
 本仓库以链接方式安装（`link:`）时改动立即生效，但要重载 bundle 才会重新加载 JS 模块。
 
-### 发新版本
-
-只通过 GitHub tag 分发（没有发 npm：`npm publish` 要求 OTP，见 0.1.4 的说明）：
-
-```bash
-# 1) 改 package.json 的 version，更新 CHANGELOG，并把上面的安装片段指到新版本
-npm run check && npm test
-git add -A && git commit -m "release: 0.1.6"
-git tag v0.1.6
-git push origin main --tags
-```
-
-安装方用 `github:lain312ly/dsh-lazy-tools#v0.1.6` 即可；`package.json` 保持 `private: true`，避免误发 npm。
+发版流程（改版本号、打 tag、推送）见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## License
 
