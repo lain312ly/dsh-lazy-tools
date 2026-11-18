@@ -11,7 +11,7 @@
 > It never makes a tool unavailable: it only changes when a tool appears in the tool table, and the model can restore
 > any hidden tool in one step.
 >
-> Install: **Plugin Manager → Install bundle → `github:lain/dsh-lazy-tools#v0.1.0`**
+> Install: **Plugin Manager → Install bundle → `github:lain/dsh-lazy-tools#v0.1.3`**
 
 ## 它解决的问题
 
@@ -52,10 +52,10 @@
 **方式一：GUI**（推荐）— 打开插件管理，安装 bundle，填：
 
 ```
-github:lain/dsh-lazy-tools#v0.1.0
+github:lain/dsh-lazy-tools#v0.1.3
 ```
 
-**方式二：让 agent 装** — 对 agent 说「安装 `github:lain/dsh-lazy-tools#v0.1.0` 这个 bundle」，它会调用
+**方式二：让 agent 装** — 对 agent 说「安装 `github:lain/dsh-lazy-tools#v0.1.3` 这个 bundle」，它会调用
 `plugin_manager` 的 `install_bundle`（target 同上）。
 
 **方式三：手动** — 往 `~/.dsh/profiles/<profile>/package.json` 加依赖与 bundle 条目：
@@ -63,7 +63,7 @@ github:lain/dsh-lazy-tools#v0.1.0
 ```json
 {
   "dependencies": {
-    "dsh-lazy-tools": "github:lain/dsh-lazy-tools#v0.1.0"
+    "dsh-lazy-tools": "github:lain/dsh-lazy-tools#v0.1.3"
   },
   "dsh": {
     "profile": {
@@ -75,7 +75,9 @@ github:lain/dsh-lazy-tools#v0.1.0
 
 然后在 profile 目录执行 `pnpm install`（或让 DSH 重启时补装），重启 DSH。
 
-安装后**只影响新创建的 agent**：当前已存在的会话保持完整工具面，新开一个对话即可看到效果。
+安装后，**新对话立刻**生效；已经开着的会话会在插件加载时被补上限制（0.1.2 起），但如果该会话日志里已经声明过
+全量工具，这些工具会按「已加载」保留（`resumePreserve`，否则模型手里有名字却调不动）。想看到完整的「首请求只剩
+常驻层」，新开一个对话即可。
 
 ## 配置
 
