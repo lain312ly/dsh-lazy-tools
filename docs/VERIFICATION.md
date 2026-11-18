@@ -109,4 +109,6 @@ That session reported `restricted: true`, `toolUpdate: "addition-only"`, `visibl
 - **Other platforms.** macOS and Linux were not tested.
 - **Routes without `toolUpdate`.** The `null` path (tool still loads, no `tool_addition` block) is implemented and
   documented but could not be observed on this installation, whose route reports `addition-only`.
-- **Unload.** `addition-only` routes discard `tool_removal`, so unloading is intentionally unsupported and untested.
+- **In-session unload.** `addition-only` routes discard `tool_removal`, so hiding an already loaded tool again is
+  intentionally unsupported and untested. Uninstalling the bundle is unaffected and was verified (41 tools / 38,941
+  characters after disabling).

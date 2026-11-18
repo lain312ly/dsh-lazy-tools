@@ -72,7 +72,8 @@
 - **只影响新创建的 agent**。插件安装/启用前已经存在的会话不会被回溯限制，需要新开对话。
 - `tools.restrict()` 只作用于该 agent 继承链上的工具；由 agent 自身 scope 注册的工具无法被命名，插件会自动过滤掉这类名字，
   这是刻意保留的安全边界。
-- `addition-only` 路由会丢弃 `tool_removal`，所以本插件**不提供卸载**：已加载的工具本回合内保持可用。
+- `addition-only` 路由会丢弃 `tool_removal`，所以已加载的工具**在本会话内**无法再收回（没有会话内 unload）：它只在本次对话里保持常驻。
+  这与「卸载插件」无关——插件随时可以禁用或移除，见下方「卸载插件」。
 - 与其它同样使用 `tools.restrict` 的插件叠加时，限制取交集，可能「过度隐藏」。出现异常时禁用本插件即可恢复。
 - 路由没有 `toolUpdate` 能力时，加载仍然有效，但不会出现 `tool_addition` 块，节省的是「初始工具表」而不是「增量更新」。
   可用 `toolbox_status` 查看能力值。
@@ -93,7 +94,7 @@
 3. 若出现 HTTP 400 / `tool_addition` 相关报错，立即禁用本插件（`set_plugin enabled:false`）并删除上面的 override。
 4. 修改 `index.js` 后需要对 bundle 做一次 disable → enable，已装载的 JS 模块不会热替换。
 
-## 卸载
+## 卸载插件
 
 插件管理器禁用或移除 `lazy-tools` 行即可：每个 agent 上的限制会随插件 fiber 与 agent scope 一起销毁，
 新会话恢复完整工具面。

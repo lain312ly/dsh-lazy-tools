@@ -133,7 +133,9 @@ github:lain/dsh-lazy-tools#v0.1.0
 - **只影响新创建的 agent**。插件安装/启用前已经存在的会话不会被回溯限制。
 - `tools.restrict()` 只能命名该 agent 继承链上的工具；agent 自身 scope 注册的工具无法被命名，插件会自动过滤掉这类名字
   （刻意保留的安全边界）。
-- `addition-only` 路由会丢弃 `tool_removal`，所以**不提供卸载**：已加载的工具在本会话内保持可用。
+- `addition-only` 路由会丢弃 `tool_removal`，所以**已加载的工具在本会话内无法再收回**（没有会话内 unload）：
+  它只在本次对话里占用常驻额度，对后续对话没有影响。注意这与「卸载插件」无关——插件随时可以在插件管理里禁用或移除，
+  见下方「卸载插件」。
 - 与其它同样使用 `tools.restrict` 的插件叠加时，限制取交集，可能过度隐藏；出现异常禁用本插件即可恢复。
 - `visible` 里写错的名字会被静默忽略（用 `toolbox_status` 的 `visible` 字段核对）。
 
@@ -152,6 +154,15 @@ github:lain/dsh-lazy-tools#v0.1.0
 
 3. 若出现 HTTP 400 或 `tool_addition` 相关报错，先禁用本插件并删除上面的 override；
 4. 改了 `index.js` 后必须对 bundle 做一次 disable → enable：已装载的 JS 模块不会热替换。
+
+## 卸载插件
+
+插件管理里禁用或移除 `lazy-tools` 行即可，随时可做，不需要改任何代码：
+
+- 每个 agent 上的限制随插件 fiber 与 agent scope 一起销毁，**新开一个对话就恢复完整工具面**
+  （实测：禁用后新会话 41 个工具 / 38,941 字符）；
+- 当前已存在的会话不受影响，它们本来就没被本插件限制过，或在禁用时保持原样；
+- 用链接方式（`link:`）安装的，删除 profile `package.json` 里对应的 `dependencies` 与 `bundles` 条目后重装依赖即可。
 
 ## 目录结构
 

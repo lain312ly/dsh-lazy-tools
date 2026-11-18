@@ -51,7 +51,8 @@ First public release.
   keep the full surface until reopened in a new conversation.
 - Tools that an agent registers in its own scope cannot be named by
   `tools.restrict()` and are therefore never hidden (intentional safety bound).
-- `addition-only` routes discard `tool_removal`: loaded tools stay callable for
-  the rest of the session, there is no unload.
+- `addition-only` routes discard `tool_removal`: a loaded tool cannot be hidden again inside the same session
+  (no in-session unload). Disabling or removing the bundle is always possible and restores the full surface for new
+  sessions.
 - Combined with other plugins that also call `tools.restrict`, restrictions
   intersect and may over-hide.

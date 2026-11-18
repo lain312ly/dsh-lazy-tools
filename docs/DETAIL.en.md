@@ -80,8 +80,9 @@ Example — keep `subagent` and `web_search` resident too:
   new conversation to see the effect.
 - `tools.restrict()` only reaches tools on the agent's inheritance chain. Tools an agent registers in its own scope
   cannot be named, so the plugin filters them out — an intentional safety bound.
-- `addition-only` routes discard `tool_removal`, so there is **no unload**: a loaded tool stays callable for the rest
-  of the session.
+- `addition-only` routes discard `tool_removal`, so a loaded tool **cannot be hidden again inside the same session**
+  (there is no in-session unload): it simply stays resident for the rest of that conversation. This has nothing to do
+  with uninstalling the bundle — disable or remove the `lazy-tools` row at any time, see "Uninstall the bundle" below.
 - With other plugins that also call `tools.restrict`, the restrictions intersect and may over-hide. Disable this plugin
   to recover.
 - Without a `toolUpdate` capability the load still works but no `tool_addition` block appears: you save the initial tool
@@ -104,7 +105,7 @@ Example — keep `subagent` and `web_search` resident too:
 3. On HTTP 400 or any `tool_addition` error, disable the plugin (`set_plugin enabled:false`) and remove that override.
 4. After editing `index.js`, disable and re-enable the bundle: an already loaded JS module is not hot-replaced.
 
-## Uninstall
+## Uninstall the bundle
 
 Disable or remove the `lazy-tools` row in Plugin Manager. Every per-agent restriction is destroyed with the plugin
 fiber and the agent scope, and new sessions get the full surface back.
