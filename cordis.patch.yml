@@ -1,0 +1,10 @@
+# dsh-lazy-tools: cache-friendly progressive tool disclosure.
+# The row config below is the shipped default; a profile-level patch may override it.
+- insert:
+    - id: lazy-tools
+      name: dsh-lazy-tools
+      config:
+        promptSection: true
+        searchLimit: 8
+        statusTool: true
+        resumePreserve: true

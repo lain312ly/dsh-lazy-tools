@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Manifest, files list, locales, detail documents, patch, icon.
+      - name: Package self-check
+        run: npm run check
+
+      # The verification helper is not executed here: it needs local session
+      # logs and the zstandard package. Only its syntax is checked.
+      - name: Check verification helper syntax
+        run: python -c "import ast; ast.parse(open('scripts/verify-session-tools.py', encoding='utf-8').read())"

@@ -1,0 +1,59 @@
+{
+  "name": "dsh-lazy-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cache-friendly progressive tool disclosure for DeepSeek Harness: keep rarely used tools out of every request and activate them on demand through the DeepSeek tool_addition channel.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "icon": "icon.svg",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "LICENSE",
+    "README*.md",
+    "CHANGELOG.md"
+  ],
+  "author": "lain <2510629534@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lain/dsh-lazy-tools.git"
+  },
+  "homepage": "https://github.com/lain/dsh-lazy-tools#readme",
+  "bugs": {
+    "url": "https://github.com/lain/dsh-lazy-tools/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "bundle",
+    "tools",
+    "context",
+    "progressive-disclosure",
+    "tool-addition",
+    "token"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node --check index.js && node scripts/check-package.mjs",
+    "verify": "python scripts/verify-session-tools.py --check --max-tools 20 --max-chars 16000 --require-tools read,write,pwsh --expect-addition"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Lazy tools",
+    "description": "Keeps rarely used tools out of every request and loads them on demand with toolbox_search / toolbox_load; activation travels through DeepSeek tool_addition / defer_loading instead of resending tool definitions. Only newly created agents are affected, loaded tools cannot be unloaded, and disabling the bundle restores the full tool surface.",
+    "detail": "docs/DETAIL.en.md"
+  }
+}
