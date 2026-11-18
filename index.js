@@ -611,7 +611,10 @@ export function apply(ctx, rawConfig) {
             restricted: state !== undefined && state.dispose !== undefined,
             agentToolCount: agent !== undefined ? view.size : null,
             composedToolCount: agent !== undefined ? pool.size : null,
-            visible: [...visible].filter(toolName => pool.has(toolName)),
+            // What the step can call right now. `pool` is the composition the
+            // agent *could* call; a resident name outside it (universe fallback)
+            // or one hidden by a stacked restriction is not visible to the model.
+            visible: [...visible].filter(toolName => view.has(toolName)),
             activated: state !== undefined ? [...state.activated] : [],
             dropped: state !== undefined ? [...state.dropped] : [],
             awaitingCount: awaiting.length,

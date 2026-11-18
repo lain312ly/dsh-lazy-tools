@@ -184,3 +184,24 @@ Live re-check still owed for the two hand-run `minimal` conversations: after thi
 `007cdbc7` should report `restricted: true`, `composedToolCount: 21`, `activated` = the 12 tools its already-declared
 header exposed, `awaiting` = the 4 `team_task_*` names; and a message in `5d9f2c35` should report `restricted: true`,
 `composedToolCount: 21`, `visible` = `pwsh` + `read_image`, and `subagent` still `unavailable`.
+
+## 0.1.3 (2026-11-18)
+
+Found by the model itself in the second turn of `007cdbc7`, while it re-read `index.js` after the 0.1.2 reload. In that
+session's first `toolbox_status` (0.1.1) the `visible` field listed the 16 resident *names* — `read`, `write`, `edit`,
+`glob`, `grep`, … — while the first request header held 17 tools, exactly `pwsh`, `read_image`, the three toolbox tools
+and 12 desktop extras. Fourteen of the "visible" names did not exist in that preset at all, so the field reported ghost
+tools: a milder version of the 0.1.1 activation bug.
+
+Cause: `toolbox_status` filtered the resident layer with `pool.has(name)` — the agent's composition, or the process-wide
+universe when no state existed yet — instead of the callable view. The same handler already computes `view` via
+`agentView(agent)`, which is the authoritative "what this step can call".
+
+The fix is one word (`pool` → `view`) plus a comment, but the invariant is worth pinning: `visible ⊆ callable` and
+`awaiting ∩ callable = ∅`. The new test builds a composition that contains `read`, has "another plugin" hide it, and
+asserts the status does not list it. Verified as a real regression test: it fails with `pool.has` (`8/9`) and passes with
+`view.has` (`9/9`).
+
+Note this symptom was already absent from the 0.1.2 status in the same session (`visible` = `pwsh` + `read_image`),
+because the universe fallback was the first bug; the remaining exposure is a restriction that cannot be applied (for
+example a stacked plugin, or `restrict()` throwing), where `visible` would again have listed names the step cannot call.

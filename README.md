@@ -137,7 +137,7 @@ github:lain/dsh-lazy-tools#v0.1.0
 | --- | --- |
 | `toolbox_search(query, limit?)` | 在**当前预设能拿到的**已隐藏工具里按分词后的关键词搜索，返回名称、一句话描述 |
 | `toolbox_load(names[])` | 激活指定工具；返回参数名与必填项，下一步即可调用。本预设没装配的名字会出现在 `unavailable` 里，不会被伪造成"已激活" |
-| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate` 能力、`composedToolCount`（本会话真实工具面）、常驻/已加载/未加载清单、`dropped`（因切预设而失效的激活） |
+| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate` 能力、`composedToolCount`（本会话真实工具面）、`visible`（本步真能调用的常驻工具，`visible ⊆ agentToolCount`）、常驻/已加载/未加载清单、`dropped`（因切预设而失效的激活） |
 
 名字已经知道时只需一步：`toolbox_load(["schedule_list"])`。`toolbox_search` 是「只知道意图、不知道名字」时的兜底。
 

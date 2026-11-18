@@ -202,6 +202,27 @@ test('status reports the composed surface, not the process-wide universe', async
   assert.ok(!status.awaiting.includes('list_agents'), 'another preset\u2019s tool is not awaited')
 })
 
+test('status visible lists only the tools the step can actually call', async () => {
+  const { ctx, makeAgent, emit, toolbox } = tool('toolbox_status')
+  const agent = makeAgent('s1', ['read', 'pwsh', 'subagent'])
+  emit('agent/created', { agent })
+
+  // Another plugin (or this one failing to restrict) hides a resident tool that
+  // *is* part of the composition, so `pool` still contains it while `view` does not.
+  agent.denied.add('read')
+
+  const status = await toolbox('toolbox_status').execute({}, { agent })
+  const callable = new Set(ctx.tools.definitions(agent).map(entry => entry.name))
+  assert.ok(status.visible.includes('pwsh'))
+  assert.ok(!status.visible.includes('read'), 'a resident tool the step cannot call is not reported visible')
+  for (const name of status.visible) {
+    assert.ok(callable.has(name), `${name} is reported visible but is not callable`)
+  }
+  for (const name of status.awaiting) {
+    assert.ok(!callable.has(name), `${name} is reported awaiting but is callable`)
+  }
+})
+
 test('a plugin load re-restricts agents that already existed', async () => {
   const live = []
   const harness = createHarness({ liveAgents: () => live })

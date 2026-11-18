@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-11-18
+
+### Fixed
+
+- **`toolbox_status.visible` no longer reports tools the step cannot call.** It
+  filtered the resident layer by `pool` — the agent's composition, or the
+  process-wide universe when no state existed yet — instead of by the callable
+  view. In a `minimal` session it claimed 16 resident tools (`read`, `write`,
+  `edit`, …) while the request header declared 17 names, 14 of which that preset
+  could never call. Filtering by the live view also covers stacked restrictions:
+  a resident tool hidden by another plugin is no longer reported visible, and
+  `visible` is now a subset of the callable surface by construction.
+
+### Added
+
+- test: `status visible lists only the tools the step can actually call`, which
+  asserts `visible ⊆ callable` and `awaiting ∩ callable = ∅` (nine tests total).
+
 ## [0.1.2] — 2026-11-18
 
 ### Fixed
