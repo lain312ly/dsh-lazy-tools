@@ -87,6 +87,20 @@ A passing run prints, for example:
 PASS session=0f032475 tools=18 chars=14496 additions=2 laterAdded=exit_plan_mode
 ```
 
+### Rerun after the release refactor
+
+After this release prepared the localized detail documents and the packaging checks, the bundle was disabled and
+re-enabled to force a module reload, and a fresh subagent reproduced the surface:
+
+```
+PASS session=86a1c100 tools=18 chars=14496 additions=2 laterAdded=exit_plan_mode,list_agents
+```
+
+That session reported `restricted: true`, `toolUpdate: "addition-only"`, `visible` = the 16 resident names,
+`awaitingCount: 87`, `agentToolCount: 19`; `toolbox_load(["list_agents"])` returned
+`activated: ["list_agents"]`, `agentToolCount` rose to 20, `awaitingCount` fell to 86, and `list_agents` then returned
+9 agents. The numbers match the figures in the README and `docs/DETAIL.*.md` exactly.
+
 ## Not verified
 
 - **Rendered metadata.** The Plugin Manager detail page, localized title/description, and icon were checked as files and
