@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-11-18
+
+### Changed
+
+- **GitHub tags are the only distribution channel.** The 0.1.3 packaging work
+  made the package publishable, but the first `npm publish` was rejected with
+  HTTP 403 — the account requires a second factor (`--otp`) or a granular token
+  with 2FA bypass, and the author decided not to publish to npm. `private` is
+  back, the install snippets point at the GitHub tag, and the README's publish
+  section now describes the tag flow instead of npm.
+
 ## [0.1.3] — 2026-11-18
 
 ### Fixed
