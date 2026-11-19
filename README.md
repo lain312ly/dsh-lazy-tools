@@ -182,7 +182,7 @@ github:lain312ly/dsh-lazy-tools#v0.1.5
 
 ## 实测数据
 
-测试环境：DSH Desktop 2.0.23-next、`@deepseek-ai/dsh@0.2.2-rc.3`、Windows、`desktop` profile。
+测试环境：DSH Desktop 2.0.23-next / 2.0.24-next、`@deepseek-ai/dsh@0.2.2-rc.3` / `0.2.2-rc.5`、Windows、`desktop` profile。
 
 | 场景 | 首个 `request/header` | 字符 |
 | --- | --- | --- |
@@ -212,7 +212,9 @@ github:lain312ly/dsh-lazy-tools#v0.1.5
 | **native**（默认） | `standard`、`cordis`、`minimal`，以及没声明 executor 的自定义预设 | 每个工具一个 schema，进 `request/header.tools` | 首条请求直接少发几十个 schema；`toolbox_load` 走**增量 `tool_addition`**，追加而不重写前缀 |
 | **PTC** | `ptc`（挂 `tool-executor-ptc`）、`flash-lean-ptc-v3`（挂 `tool-presentation: {mode: ptc}`） | 只有 `run_code`，其余工具以 `ToolArgsMap` SDK 块写在**系统提示词**里 | 省的是系统提示词（实测 −59%）；header 不变，**没有 `tool_addition` 可用**，每次 load 会改写一次系统提示词 → 触发一次前缀缓存失效，建议集中加载 |
 
-- 在 `@deepseek-ai/dsh@0.2.2-rc.3` 上验证；插件只用到 `ctx.tools.restrict`、`ctx.systemPrompt.section`、
+- 在 `@deepseek-ai/dsh@0.2.2-rc.3` 与 `0.2.2-rc.5` 上验证（rc.5 是 2026-11-19 的兼容冒烟：全新子会话首个
+  header 18 工具，`toolbox_load` 后 19 并写出 `tool-addition`，`toolbox_search` / 加载后的工具调用全部成功）；
+  插件只用到 `ctx.tools.restrict`、`ctx.systemPrompt.section`、
   `ctx.on('agent/created' | 'agent/disposed' | 'tools/change')`、`ctx.agents.list()`、`session.toolHistory()`、
   `agent.model.current()` 这些公开面；
 - native 呈现下路由的 `toolUpdate` 能力决定增量通道形态：`addition-only` / `in-history` 走 `tool_addition`；

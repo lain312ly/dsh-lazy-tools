@@ -99,7 +99,7 @@ averaging 50+ calls/day resident regardless of schema size.
 The script lives at `scripts/tool-census.py` in the repository; in a bundle installed from GitHub it sits at
 `~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/` (shipped since 0.1.5).
 
-## Measured (DSH Desktop 2.0.23-next, `@deepseek-ai/dsh@0.2.2-rc.3`, Windows)
+## Measured (DSH Desktop 2.0.23-next / 2.0.24-next, `@deepseek-ai/dsh@0.2.2-rc.3` / `0.2.2-rc.5`, Windows)
 
 - Baseline session without the plugin: 42 tools, **39,429 characters**.
 - 14 resident tools accounted for 13,034 of those characters; hideable candidates about 26,300.

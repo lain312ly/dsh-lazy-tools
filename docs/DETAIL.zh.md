@@ -89,7 +89,7 @@ schema ≤1500 字符」判 `resident`，日均 ≥50 次的工具无论 schema 
 脚本在仓库的 `scripts/tool-census.py`；从 GitHub 安装的 bundle 里位于
 `~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/`（0.1.5 起随包发布）。
 
-## 实测数据（测试环境：DSH Desktop 2.0.23-next、`@deepseek-ai/dsh@0.2.2-rc.3`、Windows）
+## 实测数据（测试环境：DSH Desktop 2.0.23-next / 2.0.24-next、`@deepseek-ai/dsh@0.2.2-rc.3` / `0.2.2-rc.5`、Windows）
 
 - 基线（未启用插件的新会话）：42 个工具、**39,429 字符**；
 - 其中 14 个常驻工具占 13,034 字符，可隐藏的候选工具占约 26,300 字符；

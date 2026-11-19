@@ -9,8 +9,8 @@ Session identifiers are truncated to 8 characters; full logs stay on the test ma
 
 | Item | Value |
 | --- | --- |
-| DSH Desktop | 2.0.23-next |
-| `@deepseek-ai/dsh` | 0.2.2-rc.3 |
+| DSH Desktop | 2.0.23-next (all numbers below); 2.0.24-next for the 2026-11-19 smoke |
+| `@deepseek-ai/dsh` | 0.2.2-rc.3 (all numbers below); 0.2.2-rc.5 for the 2026-11-19 smoke |
 | Profile | `desktop` |
 | OS | Windows |
 | Model route | DeepSeek account route, `deepseek-flash` |
@@ -205,3 +205,18 @@ asserts the status does not list it. Verified as a real regression test: it fail
 Note this symptom was already absent from the 0.1.2 status in the same session (`visible` = `pwsh` + `read_image`),
 because the universe fallback was the first bug; the remaining exposure is a restriction that cannot be applied (for
 example a stacked plugin, or `restrict()` throwing), where `visible` would again have listed names the step cannot call.
+
+## Compatibility smoke — DSH 0.2.2-rc.5 / Desktop 2.0.24-next (2026-11-19)
+
+The desktop auto-updated from rc.3/2.0.23 to rc.5/2.0.24 in the days after the release, so the same plugin was
+re-checked on the new runtime with no code changes:
+
+| Check | Observation |
+| --- | --- |
+| plugin still applies | lead session `toolbox_status`: `restricted: true`, `agentToolCount: 45`, `composedToolCount: 49`, `awaitingCount: 4` — same shape as on rc.3 |
+| fresh agent is restricted | child session `7a62b308` (cordis): first `request/header` = **18 tools**, `toolbox_status` reports `restricted: true`, `agentToolCount: 19`, `composedToolCount: 49`, `awaitingCount: 30` |
+| tokenised search | `toolbox_search("list subagent models")` → `tokens: ["list","subagent","models"]`, 15 hits, `list_subagent_models` first |
+| activation + incremental channel | `toolbox_load(["list_subagent_models"])` → `activated`, the next `request/header` grows 18 → **19 tools**, and a `developer/message` carries the `tool-addition` block |
+| loaded tool callable | `list_subagent_models()` returned `deepseek-account — DeepSeek Account` |
+| no restriction-caused errors | no error tool results in `7a62b308` |
+| unit gate | `npm test` 9/9, `npm run check` pass under Node 24.19.0 |
