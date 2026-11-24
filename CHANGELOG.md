@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5.1] — 2026-11-24
+
+### Fixed
+
+- **The prompt catalog no longer lists tools the session can already call.**
+  The section text provider now reads the assembling agent from the assembly
+  context the loop passes (`{ agent, scope: agent }`) and builds the list from
+  that agent's own composition minus what it has already loaded, instead of the
+  process-wide tool universe. The previous text claimed those tools were
+  "intentionally absent from your tool list", which was false for any tool this
+  session had activated — and the list also carried names that another preset
+  mounted and this session could never load.
+
+- **The catalog is frozen per agent at its first assembly.** DSH keeps a changed
+  system prompt by appending the whole re-rendered prompt to the history, so a
+  list that shrank after every `toolbox_load` would have cost one full prompt
+  copy per activation. A tool loaded later stays in the list, and `toolbox_load`
+  answers `alreadyAvailable` for it.
+
+### Added
+
+- an assembly that names no agent the plugin has seen (a bare `assemble()`,
+  another plugin's scope) gets its own hedged installation list, which claims
+  nothing about the current tool list.
+- `docs/MAINTENANCE.md` records each weekly availability check; it is excluded
+  from the published bundle (`files: "!docs/MAINTENANCE.md"`), and
+  `npm run check` now understands exclusion entries instead of failing on them.
+
 ## [0.1.5] — 2026-11-18
 
 ### Added

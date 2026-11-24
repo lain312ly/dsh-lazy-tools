@@ -11,7 +11,7 @@
 > It never makes a tool unavailable: it only changes when a tool appears in the tool table, and the model can restore
 > any hidden tool in one step.
 >
-> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.5`**
+> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.5.1`**
 
 ## 它解决的问题
 
@@ -24,7 +24,9 @@
   （`read` `write` `edit` `glob` `grep` `pwsh` `bash` `read_image` `web_fetch` `todo_write` `ask_user_question` `skill`
   `present` `job_list` `job_output` `job_kill` `exit_plan_mode`），可用 `visible` 增补；
 - **延迟层**：其余全部已安装工具。它们不在初始工具表里，只在系统提示词里留一段紧凑目录，模型用 `toolbox_search` 查找、
-  用 `toolbox_load` 激活。
+  用 `toolbox_load` 激活。目录按**该 agent 自己的**工具表生成（不列别的 preset 才有的工具，也不列本会话已加载的），
+  并在会话首次组装时固定下来——DSH 对变化的系统提示词是「追加」而不是原地重写，目录若随每次激活缩水，每激活一次就
+  要多付一份完整提示词。
 
 `run_code`（PTC 传输层）无法被 `tools.restrict()` 命名，因此天然常驻。
 
@@ -52,10 +54,10 @@
 **方式一：GUI**（推荐）— 打开插件管理，安装 bundle，填：
 
 ```
-github:lain312ly/dsh-lazy-tools#v0.1.5
+github:lain312ly/dsh-lazy-tools#v0.1.5.1
 ```
 
-**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.5` 这个 bundle」，
+**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.5.1` 这个 bundle」，
 它会调用 `plugin_manager` 的 `install_bundle`（target 同上）。
 
 **方式三：手动** — 往 `~/.dsh/profiles/<profile>/package.json` 加依赖与 bundle 条目：
@@ -63,7 +65,7 @@ github:lain312ly/dsh-lazy-tools#v0.1.5
 ```json
 {
   "dependencies": {
-    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.5"
+    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.5.1"
   },
   "dsh": {
     "profile": {
@@ -277,7 +279,8 @@ dsh-lazy-tools/
 ├─ docs/
 │  ├─ DETAIL.zh.md             # 中文设计文档（插件详情页）
 │  ├─ DETAIL.en.md             # 英文设计文档
-│  └─ VERIFICATION.md          # 实测证据与复现步骤
+│  ├─ VERIFICATION.md          # 实测证据与复现步骤
+│  └─ MAINTENANCE.md           # 每周维护记录（可用性检测结论）
 ├─ test/
 │  └─ lazy-tools.test.mjs      # 内存 harness 的行为测试（npm test）
 ├─ scripts/
@@ -292,7 +295,7 @@ dsh-lazy-tools/
 
 ```bash
 npm run check     # node --check + 清单/资源自检
-npm test          # 内存 harness 行为测试：隐藏/激活/unavailable/分词搜索/切预设清理/重载补限制
+npm test          # 内存 harness 行为测试：隐藏/激活/unavailable/分词搜索/切预设清理/重载补限制/提示词目录
 npm run verify    # 读取 ~/.dsh/sessions 最新日志，断言首个工具表足够小且出现 tool_addition
 python scripts/tool-census.py --days 30   # 按自己的历史调用频率，给出 visible 建议
 ```
@@ -302,7 +305,8 @@ DSH_HOME 不在默认位置时用 `--sessions <path>` 指定。
 
 本仓库以链接方式安装（`link:`）时改动立即生效，但要重载 bundle 才会重新加载 JS 模块。
 
-发版流程（改版本号、打 tag、推送）见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+发版流程（改版本号、打 tag、推送）见 [CONTRIBUTING.md](CONTRIBUTING.md)；每周可用性检测的结论记在
+[docs/MAINTENANCE.md](docs/MAINTENANCE.md)。
 
 ## License
 

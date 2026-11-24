@@ -17,6 +17,9 @@ The plugin splits the surface into two layers:
   ≥100 calls per month and a schema under 1.5k characters; `run_code` stays resident because `restrict()` cannot name it.
 - **Deferred layer**: every other global tool. Those are absent from the initial tool table; the system prompt keeps one
   compact catalog line, and the model calls `toolbox_search` to find a candidate and `toolbox_load` to activate it.
+  That line is built from **this agent's own** tool set (never a tool only another preset mounts, never one this session
+  already loaded) and is fixed at the session's first assembly: DSH keeps a changed system prompt by appending it, so a
+  catalog that shrank with every activation would cost one full prompt copy each time.
 
 ## How it works
 

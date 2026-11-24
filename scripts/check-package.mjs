@@ -97,6 +97,14 @@ function expand(entry) {
 
 if (manifest !== undefined && Array.isArray(manifest.files)) {
   for (const entry of manifest.files) {
+    // A negation (`!docs/MAINTENANCE.md`) excludes an already-included path,
+    // so it is checked for a resolvable target, not for matching files.
+    if (entry.startsWith('!')) {
+      const target = entry.slice(1)
+      if (statOrUndefined(target) === undefined) fail(`files exclusion names a missing path: ${entry}`)
+      else ok(`files "${entry}" excludes ${target}`)
+      continue
+    }
     const matches = expand(entry)
     if (matches.length === 0) fail(`files entry matches nothing: ${entry}`)
     else ok(`files "${entry}" -> ${matches.length} path(s)`)

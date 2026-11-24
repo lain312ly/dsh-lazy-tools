@@ -245,7 +245,14 @@ export function apply(ctx, rawConfig) {
   function stateFor(agent) {
     const existing = agents.get(agent.id)
     if (existing !== undefined) return existing
-    const state = { agent, activated: new Set(), snapshot: new Map(), dispose: undefined, dropped: new Set() }
+    const state = {
+      agent,
+      activated: new Set(),
+      snapshot: new Map(),
+      dispose: undefined,
+      dropped: new Set(),
+      catalog: undefined,
+    }
     agents.set(agent.id, state)
     if (!config.resumePreserve) return state
     const declared = previouslyDeclared(agent)
@@ -320,17 +327,80 @@ export function apply(ctx, rawConfig) {
     return names.sort()
   }
 
-  function catalogText() {
+  /** The agent one prompt assembly belongs to, when the caller named one.
+   *
+   * The agent loop assembles with `{ agent, scope: agent }` — `scope` is the
+   * agent object itself, because an agent's registrations are keyed by it. A
+   * bare `assemble()` or another plugin's scope resolves to nothing, and that
+   * assembly gets the installation-wide catalog instead of a wrongly personal
+   * one.
+   */
+  function agentOfAssembly(context) {
+    if (context === null || typeof context !== 'object') return undefined
+    const candidate = context.agent !== undefined ? context.agent : context.scope
+    if (candidate === null || typeof candidate !== 'object') return undefined
+    if (typeof candidate.id !== 'string') return undefined
+    const state = agents.get(candidate.id)
+    return state === undefined ? undefined : state.agent
+  }
+
+  /** One agent's deferred-tool catalog, fixed the first time it is assembled.
+   *
+   * DSH renders every section on every step, and a route that accepts a
+   * mid-session system prompt keeps the changed text by appending the whole
+   * re-rendered prompt to the history. A list that shrank after every
+   * `toolbox_load` would therefore cost one full prompt copy per activation, so
+   * the catalog is frozen per agent for the life of the session: a tool loaded
+   * afterwards stays listed, and `toolbox_load` answers `alreadyAvailable`.
+   *
+   * @param agent - the agent whose composition the catalog describes.
+   * @returns the catalog text, `''` when the agent has nothing deferred, or
+   * `undefined` when this plugin has not seen the agent's composition yet.
+   */
+  function catalogFor(agent) {
+    const state = agents.get(agent.id)
+    if (state === undefined || state.snapshot.size === 0) return undefined
+    if (state.catalog === undefined) {
+      state.catalog = personalCatalog(awaitingNames(agent))
+    }
+    return state.catalog
+  }
+
+  /** Catalog of one preset's deferred tools — every listed name is loadable. */
+  function personalCatalog(names) {
+    if (names.length === 0) return ''
+    const shown = names.slice(0, 80).join(', ')
+    const more = names.length > 80 ? `, and ${names.length - 80} more` : ''
+    return 'Deferred tools of your preset, hidden from your tool list to save context: ' + shown + more + '.\n'
+      + 'Call toolbox_search(query) to inspect a candidate, then toolbox_load(names) to activate it before use. '
+      + 'A name that is already loaded, or that this preset does not mount, is reported back instead of failing.'
+  }
+
+  /** Catalog for an assembly that names no agent: the installation-wide list.
+   *
+   * Nothing here is claimed to be absent from the current tool list, because
+   * this view cannot tell which preset the step runs under.
+   */
+  function installationCatalog() {
     globalDefinitions()
     const names = awaitingNames(undefined)
     if (names.length === 0) return ''
     const shown = names.slice(0, 80).join(', ')
     const more = names.length > 80 ? `, and ${names.length - 80} more` : ''
-    return 'Deferred tools seen in this installation: ' + shown + more + '.\n'
-      + 'They are intentionally absent from your tool list to save context. '
-      + 'Not every one of them belongs to your preset: toolbox_search only returns the ones you can actually load, '
-      + 'and toolbox_load reports the rest as unavailable. '
+    return 'Tools registered in this installation: ' + shown + more + '.\n'
+      + 'Some of them are already in your tool list, some belong to a preset this session does not use, '
+      + 'and the rest are deferred to save context. '
+      + 'toolbox_search only returns the ones you can load right now, and toolbox_load reports the rest as unavailable. '
       + 'Call toolbox_search(query) to inspect a candidate, then toolbox_load(names) to activate it before use.'
+  }
+
+  function catalogText(context) {
+    const agent = agentOfAssembly(context)
+    if (agent !== undefined) {
+      const text = catalogFor(agent)
+      if (text !== undefined) return text
+    }
+    return installationCatalog()
   }
 
   // ---------------------------------------------------------------------
@@ -636,7 +706,7 @@ export function apply(ctx, rawConfig) {
       ctx.systemPrompt.section({
         name: 'lazy-tools-catalog',
         order: config.promptOrder,
-        text: () => catalogText(),
+        text: context => catalogText(context),
       })
     } catch (error) {
       warn('could not register the deferred-tool prompt section', error)

@@ -27,6 +27,7 @@ function definition(name, description = `${name} tool`) {
 function createHarness({ liveAgents } = {}) {
   const handlers = new Map()
   const registered = new Map()
+  const sections = new Map()
 
   const ctx = {
     get(key) {
@@ -43,7 +44,12 @@ function createHarness({ liveAgents } = {}) {
         if (typeof dispose === 'function') dispose()
       }
     },
-    systemPrompt: { section: () => () => {} },
+    systemPrompt: {
+      section(section) {
+        sections.set(section.name, section)
+        return () => sections.delete(section.name)
+      },
+    },
     tools: {
       register(tool) {
         registered.set(tool.name, tool)
@@ -94,7 +100,14 @@ function createHarness({ liveAgents } = {}) {
     if (handler !== undefined) handler(payload)
   }
 
-  return { ctx, registry, makeAgent, emit, registered }
+  /** Render the registered prompt catalog the way an assembly would. */
+  function catalog(context) {
+    const section = sections.get('lazy-tools-catalog')
+    assert.ok(section !== undefined, 'the prompt catalog section was not registered')
+    return typeof section.text === 'function' ? section.text(context) : section.text
+  }
+
+  return { ctx, registry, makeAgent, emit, registered, sections, catalog }
 }
 
 function tool(name) {
@@ -263,4 +276,67 @@ test('toolbox_search applies the restriction itself for an agent it never saw', 
   const names = harness.ctx.tools.definitions(agent).map(entry => entry.name)
   assert.ok(!names.includes('web_search'), 'search applied the restriction instead of leaving the agent bare')
   assert.ok(names.includes('read'))
+})
+
+test('prompt catalog lists this agent\u2019s deferred tools, not the process-wide universe', () => {
+  const harness = createHarness()
+  apply(harness.ctx, { visible: ['read'], promptSection: true, statusTool: false })
+  // Another preset mounts list_agents, so the name enters the universe.
+  const other = harness.makeAgent('other', ['read', 'list_agents'])
+  harness.emit('agent/created', { agent: other })
+
+  const agent = harness.makeAgent('c1', ['read', 'web_search', 'subagent'])
+  harness.emit('agent/created', { agent })
+
+  const text = harness.catalog({ agent, scope: agent })
+  assert.match(text, /Deferred tools of your preset/)
+  assert.match(text, /\bweb_search\b/)
+  assert.match(text, /\bsubagent\b/)
+  assert.ok(!/\blist_agents\b/.test(text), 'a tool this preset never mounted is not offered')
+  assert.ok(!/\bread\b/.test(text), 'a resident tool is not listed as deferred')
+  assert.ok(!/\btoolbox_search\b/.test(text.split('\n')[0]), 'the disclosure tools themselves are not listed')
+})
+
+test('prompt catalog is frozen for the session, so activation never rewrites the prompt', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, { visible: ['read'], promptSection: true, statusTool: false })
+  const agent = harness.makeAgent('c2', ['read', 'subagent', 'web_search'])
+  harness.emit('agent/created', { agent })
+
+  const before = harness.catalog({ agent, scope: agent })
+  assert.match(before, /subagent/)
+
+  await harness.registered.get('toolbox_load').execute({ names: ['subagent'] }, { agent })
+
+  const after = harness.catalog({ agent, scope: agent })
+  assert.equal(after, before, 'the catalog text is byte-identical after activation, so no system prompt is re-sent')
+})
+
+test('prompt catalog falls back to the installation list when the assembly names no agent', () => {
+  const harness = createHarness()
+  apply(harness.ctx, { visible: ['read'], promptSection: true, statusTool: false })
+  const other = harness.makeAgent('other', ['read', 'list_agents'])
+  harness.emit('agent/created', { agent: other })
+  const agent = harness.makeAgent('c3', ['read', 'web_search'])
+  harness.emit('agent/created', { agent })
+
+  const global = harness.catalog({})
+  assert.match(global, /Tools registered in this installation/)
+  assert.match(global, /list_agents/, 'the installation list still spans every preset')
+  assert.ok(!/intentionally absent/.test(global), 'no claim is made about tools it cannot verify')
+
+  // An agent this plugin instance has never restricted: its composition is
+  // unknown, so a personal list would be a guess.
+  const unknown = harness.makeAgent('never-seen', ['read', 'pwsh'])
+  const fallback = harness.catalog({ agent: unknown, scope: unknown })
+  assert.match(fallback, /Tools registered in this installation/)
+})
+
+test('prompt catalog is empty when the agent has nothing deferred', () => {
+  const harness = createHarness()
+  apply(harness.ctx, { visible: ['read', 'pwsh'], promptSection: true, statusTool: false })
+  const agent = harness.makeAgent('c4', ['read', 'pwsh'])
+  harness.emit('agent/created', { agent })
+
+  assert.equal(harness.catalog({ agent, scope: agent }), '')
 })

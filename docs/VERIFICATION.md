@@ -220,3 +220,29 @@ re-checked on the new runtime with no code changes:
 | loaded tool callable | `list_subagent_models()` returned `deepseek-account — DeepSeek Account` |
 | no restriction-caused errors | no error tool results in `7a62b308` |
 | unit gate | `npm test` 9/9, `npm run check` pass under Node 24.19.0 |
+
+## 0.1.5.1 — prompt catalog scoped to the agent (2026-11-24)
+
+Reported at the end of the rc.5 smoke: the catalog paragraph listed tools the session could already call and tools only
+another preset mounts. Cause: `catalogText()` was built once from the process-wide universe, because
+`systemPrompt.section({ text })` was called with a zero-argument provider.
+
+The fix reads the assembling agent from the assembly context. `assembleContextFor(agent)` in `dsh-agent/lib/src/dispatch.ts`
+returns `{ agent, scope: agent, signal }`, and `createScope(loopCtx, this)` in `dsh-agent-loop/src/agent.ts` keys an
+agent's registrations by the agent object itself, so both fields name the same agent. Two properties follow, and both are
+tested:
+
+1. the list is that agent's composition minus what it already loaded — no universe names, no activated names;
+2. the rendered text is frozen at the agent's first assembly. `SystemPromptProjection.project()` keeps a changed system
+   prompt by *appending* the whole re-rendered prompt (`surfaceOp: 'append'`) on an `in-history` route, so a catalog that
+   shrank after every `toolbox_load` would cost one full prompt copy per activation.
+
+Live evidence, same machine and runtime as the rc.5 smoke:
+
+| Check | Observation |
+| --- | --- |
+| lead session after reload | system prompt reads `Deferred tools of your preset, hidden from your tool list to save context: team_task_create, team_task_get, team_task_list, team_task_update.` — exactly `toolbox_status.awaiting` (4), while the 26 tools that session had activated no longer appear |
+| fresh session (not resumed) | child `catalog-check` (cordis) quoted 30 catalog names; its callable set was 18 tools; intersection = **none**, i.e. nothing callable is offered as deferred and nothing outside its preset is offered |
+| no agent in the assembly | covered by unit test, not by a live route: a bare `assemble()` cannot be produced from a session |
+| render stability | unit test asserts the text is byte-identical before and after `toolbox_load` |
+| unit gate | `npm test` 13/13, `npm run check` pass under Node 24.19.0 |
