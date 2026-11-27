@@ -11,7 +11,7 @@
 > It never makes a tool unavailable: it only changes when a tool appears in the tool table, and the model can restore
 > any hidden tool in one step.
 >
-> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.6`**
+> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.6.1`**
 
 ## 它解决的问题
 
@@ -54,10 +54,10 @@
 **方式一：GUI**（推荐）— 打开插件管理，安装 bundle，填：
 
 ```
-github:lain312ly/dsh-lazy-tools#v0.1.6
+github:lain312ly/dsh-lazy-tools#v0.1.6.1
 ```
 
-**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.6` 这个 bundle」，
+**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.6.1` 这个 bundle」，
 它会调用 `plugin_manager` 的 `install_bundle`（target 同上）。
 
 **方式三：手动** — 往 `~/.dsh/profiles/<profile>/package.json` 加依赖与 bundle 条目：
@@ -65,7 +65,7 @@ github:lain312ly/dsh-lazy-tools#v0.1.6
 ```json
 {
   "dependencies": {
-    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.6"
+    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.6.1"
   },
   "dsh": {
     "profile": {
@@ -186,6 +186,9 @@ python scripts/tool-census.py --json     # 机器可读，便于自己再加工
 
 几条实操建议：
 
+- **新装的插件工具默认进延迟层**：它没被统计过，常驻名单里就不会有它。新会话里它会出现在提示词目录里，
+  `toolbox_search` / `toolbox_load` 随时能拿到；**已经开着的会话**在 0.1.6.1 起也会重建目录（v0.1.6 之前那份
+  冻结的目录不会提它）。想让它一开始就常驻，写进 `visible`，或者等下一次普查按真实用量判定；
 - **延迟层最划算的是「schema 大、频率低」的工具**（`subagent`、`workflow`、`office_*`、`cua_driver_native__*`）——
   它们一年也用不了几次，却每次都在占位置；
 - **不要为了省字符把高频小工具藏起来**：`read`/`grep`/`todo_write` 这种几百字符、一天几十次的，藏了只会多一步加载；

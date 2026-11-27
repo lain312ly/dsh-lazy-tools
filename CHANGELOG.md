@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6.1] — 2026-11-27
+
+### Fixed
+
+- **a tool registered by a newly installed plugin now reaches the prompt catalog
+  of a session that is already running.** The catalog is frozen per agent (0.1.5.1)
+  and a `tools/change` that merely *added* names left the cached text untouched,
+  so the new tool was hidden **and** unannounced: the model had no way to learn it
+  existed without guessing a `toolbox_search` query. The cache is now dropped when
+  the agent's own composition changes — a plugin install, a preset switch, an
+  uninstall — while activation still never touches it, so the prompt stays
+  byte-identical through `toolbox_load`.
+
 ## [0.1.6] — 2026-11-27
 
 ### Added

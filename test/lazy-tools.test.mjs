@@ -357,6 +357,47 @@ test('prompt catalog is empty when the agent has nothing deferred', () => {
   assert.equal(harness.catalog({ agent, scope: agent }), '')
 })
 
+test('a newly installed plugin\u2019s tools are deferred and show up in the catalog', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, { visible: ['read'], promptSection: true, statusTool: true })
+  const agent = harness.makeAgent('n1', ['read', 'subagent'])
+  harness.emit('agent/created', { agent })
+
+  const before = harness.catalog({ agent, scope: agent })
+  assert.ok(!/freshly_installed/.test(before), 'the tool does not exist yet')
+
+  // A plugin install registers global tools; DSH then recomposes the agents and
+  // emits `tools/change`, which the plugin re-applies from.
+  harness.ctx.tools.register(definition('freshly_installed'))
+  harness.emit('tools/change', {})
+  await new Promise(resolve => setTimeout(resolve, 0))
+
+  const names = harness.ctx.tools.definitions(agent).map(entry => entry.name)
+  assert.ok(!names.includes('freshly_installed'), 'an unmeasured tool starts in the deferred layer')
+  const after = harness.catalog({ agent, scope: agent })
+  assert.match(after, /freshly_installed/, 'the catalog is rebuilt so the model learns the tool exists')
+
+  // And it is describable and loadable right away.
+  const found = await harness.registered.get('toolbox_search').execute({ query: 'freshly installed' }, { agent })
+  assert.ok(found.results.some(entry => entry.name === 'freshly_installed'))
+  const loaded = await harness.registered.get('toolbox_load').execute({ names: ['freshly_installed'] }, { agent })
+  assert.deepEqual(loaded.activated, ['freshly_installed'])
+})
+
+test('activating a tool does not rebuild the catalog', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, { visible: ['read'], promptSection: true, statusTool: true })
+  const agent = harness.makeAgent('n2', ['read', 'subagent'])
+  harness.emit('agent/created', { agent })
+
+  const before = harness.catalog({ agent, scope: agent })
+  // A `tools/change` that does not alter this agent's composition (another
+  // agent's tool list moved) must keep the frozen text intact.
+  harness.emit('tools/change', {})
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(harness.catalog({ agent, scope: agent }), before)
+})
+
 // --- census ---------------------------------------------------------------
 
 /** One in-memory stand-in for the `sessionQuery` service. */

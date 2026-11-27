@@ -318,9 +318,24 @@ export function apply(ctx, rawConfig) {
     state.dispose = restrictAgent(state, denyFor(state.snapshot, state.activated))
   }
 
+  /** Whether two compositions hold exactly the same tool names. */
+  function sameComposition(previous, next) {
+    if (previous.size !== next.size) return false
+    for (const name of next.keys()) if (!previous.has(name)) return false
+    return true
+  }
+
   /** Rebuild one agent's restriction from its live view. */
   function applyRestriction(state) {
+    const previous = state.snapshot
     liftRestriction(state)
+    // The frozen catalog describes one composition. A preset switch, a newly
+    // installed plugin, or an uninstalled one changes the tool set, and the
+    // cached text would then omit the tools that just arrived (or name the ones
+    // that left). Activation never reaches this path: `toolbox_load` lifts and
+    // settles without touching the catalog, which is what keeps the prompt
+    // byte-identical for a whole session.
+    if (!sameComposition(previous, state.snapshot)) state.catalog = undefined
     settleRestriction(state)
   }
 

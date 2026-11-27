@@ -267,3 +267,26 @@ below are what the plugin itself produced, not a separate script.
 Not verified here: a real 30-day rollover (the unit tests simulate stale records with timestamps instead), `census.apply:
 false` on a live session (unit test only), and any interval other than 0/30 days against a real clock.
 
+## 0.1.6.1 — a new plugin's tools reach the catalog (2026-11-27)
+
+Found while answering "where do a newly installed plugin's tools go?".
+
+The tools themselves go to the deferred layer, and that is deliberate: the resident layer is the last census's result
+plus `visible`, and a tool that has never been measured is not in it (the same rule that keeps an unknown schema out).
+What was broken is the *announcement*: the prompt catalog is frozen per agent (0.1.5.1), and a `tools/change` that only
+added names left the cached text alone, so in a session that was already running the new tool was hidden **and**
+unmentioned — the model could only find it by guessing a `toolbox_search` query.
+
+| Check | Observation |
+| --- | --- |
+| the cache is dropped on composition change | `applyRestriction()` compares the previous and current snapshot name sets and clears `state.catalog` when they differ |
+| activation still does not churn the prompt | `toolbox_load` takes the lift+settle path directly, never `applyRestriction`, so the frozen text survives activation (existing test, still green) |
+| unrelated `tools/change` keeps the text | new test: a `tools/change` that does not alter the agent's composition leaves the catalog byte-identical |
+| new tool is deferred but announced | new test: after `tools.register()` + `tools/change`, the tool is absent from the callable set, present in the catalog text, findable by `toolbox_search`, and loadable |
+| regression check | the new test fails without the fix (`21/22`, exactly the announcement test) and passes with it (`22/22`) |
+| unit gate | `npm test` 22/22, `npm run check` pass under Node 24.19.0 |
+
+Not verified live: installing a real plugin while a session is running — the `tools/change` path is exercised by unit
+tests and by the earlier preset-switch evidence, but no plugin was installed during this check.
+
+
