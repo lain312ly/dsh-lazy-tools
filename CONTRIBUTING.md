@@ -6,7 +6,7 @@
 
 ```bash
 npm run check     # node --check + 清单/资源自检（package.json、locale、docs、patch、icon）
-npm test          # 内存 harness 行为测试（13 个用例）
+npm test          # 内存 harness 行为测试（20 个用例，含 7 个普查用例）
 ```
 
 `npm run verify` 会读取 `~/.dsh/sessions` 里的真实会话日志，断言首个工具表足够小、且出现 `tool_addition`。
@@ -64,18 +64,32 @@ git push --force origin vX.Y.Z
    - `toolbox_status` 报 `restricted: true`，`visible ⊆ agentToolCount`；
    - `toolbox_search` 能搜到、`toolbox_load` 能让下一个请求的工具表 +1，并出现 `tool-addition`；
    - 系统提示词里的目录是「Deferred tools of your preset」（按 agent 生成），不是安装级清单；
+   - `toolbox_status.census` 的 `source`/`lastRunAt`/`nextRunAt` 自洽（常驻层现在由每月普查决定，
+     见 `docs/DETAIL.zh.md` 的「常驻层的自动校准」）；
    - 子会话里没有 `unknown tool` 报错。
    日志位置：`~/.dsh/sessions/<workspace-slug>/<session-id>/session.v4.jsonl.zstd`，
    用 `scripts/verify-session-tools.py` 或同样的 zstd 读法取值，别凭记忆断言。
+   反引号里的命令都要亲自跑过：`toolbox_census({dryRun: true})` 能看到本机真实分布而不改动任何东西。
 4. **修 bug**：能复现、能修的就地修 + 补一个会失败的用例；按上面的版本号规则决定发 `v0.1.5.x` 还是 `v0.1.6`。
    修不动的大问题不硬发版本，写进报告并标 `blocked`。
-5. **报告**：在 `docs/MAINTENANCE.md` 顶部新增一行表格（日期 / DSH 版本 / 结论 / 是否发版 / 提交号），
+5. **报告**：在 `docs/MAINTENANCE.md` 顶部新增一行表格（日期 / DSH 版本 / 结论 / 是否发版 / 详情），
    详情写在该行下的分节里；然后 `git add -A && git commit && git push origin main`（有版本就 `--tags`）。
 
 报告口径：先写结论（可用 / 有 bug / 阻塞），再写证据（会话 id、数字、文件路径）。没验证的事就写「未验证」，
 不要用推测填表。
 
+## 常驻层是每月普查的产物（维护时注意）
+
+从 0.1.6 起常驻层不再是代码里的常量，而是 `~/.dsh/lazy-tools/census.json` 里那份普查结果：
+
+- 周检时发现 `visible` 与 `index.js` 的 `DEFAULT_VISIBLE` 不一致是**正常的**——本机有记录就走记录；
+- 想复现或核对某个月的判定：`toolbox_census({dryRun: true})`（只报不改）或直接读那份 JSON 的 `rows`；
+- 想立刻重算并生效：`toolbox_census`（会写记录、重置 30 天计时）；
+- 别手改 `census.json`：它带 `thresholds`，与配置不一致时会被当成过期结果丢掉，手改等于白改；
+- 报告里如果提到常驻层变了，写清是「普查结果变化」还是「代码默认值变化」，两者别混。
+
 ## 测试数据从哪来
 
-`scripts/tool-census.py` 按本机 `~/.dsh/sessions` 的真实调用记录给出 `visible` 建议，`npm run verify` 则用最新
-会话日志验证插件效果。两者都只读日志，可以放心在别人的机器上跑。
+插件内部（`toolbox_census` / 每月自动普查）走 DSH 的 `sessionQuery` 服务读会话；`scripts/tool-census.py` 直接解压
+`~/.dsh/sessions` 里的日志，是脱离 DSH 时的等价查看工具；`npm run verify` 用最新会话日志验证插件效果。三者都只读，
+可以放心在别人的机器上跑。唯一会写文件的是普查记录 `~/.dsh/lazy-tools/census.json`（插件内部普查才会写）。

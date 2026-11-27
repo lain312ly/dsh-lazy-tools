@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] — 2026-11-27
+
+### Added
+
+- **the resident layer now calibrates itself from your own usage, once a month.**
+  `toolbox_census` counts this machine's `tool/call` and `tool/ptc-dispatch`
+  events through DSH's `sessionQuery` service and re-derives which tools stay
+  visible: at least `census.minCallsPerDay` calls per day with a schema under
+  `census.maxSchemaChars`, or `census.dominantCallsPerDay` calls per day
+  whatever the size. The shipped 17-tool list is now only the fallback used
+  before the first census.
+
+- **the clock starts when a census finishes, not when the plugin is installed.**
+  Each run stamps `lastAt` and the next one is due `lastAt + intervalDays`, so a
+  restart cannot postpone it. With no record yet the first run happens
+  `census.startDelayMs` after load (30 s), which means a fresh install measures
+  before it decides anything. `census.intervalDays` changes the period (1–365
+  days); `0` disables automatic runs and leaves `toolbox_census` as the only
+  trigger.
+
+- `toolbox_census({dryRun})`, and a `census` block in `toolbox_status`
+  (`source`, `lastRunAt`, `nextRunAt`, `measuredDays`, `sessions`, `calls`,
+  `residentCount`, `record`).
+
+### Changed
+
+- the census result is persisted at `$DSH_HOME/lazy-tools/census.json` and
+  adopted on load, so a restart never rescans; changing a threshold invalidates
+  the stored numbers and the next run recomputes under the new rules.
+- applying a census rebuilds the restriction of every live agent and unfreezes
+  the prompt catalog, so a long-running session sees the new layer instead of
+  waiting for its next birth.
+- the daily rate is divided by the span the counts actually cover (oldest
+  counted event to now, capped at the window), so a machine with three days of
+  history is not divided by 30. Measured on the author's machine: 109 sessions,
+  10,069 calls, 29.9 days, 3.7 s, resident layer 9 tools.
+- `visible` stays additive in every case: a pinned tool is never squeezed out by
+  a monthly result. `census.apply: false` records the measurement without
+  touching the layer.
+
 ## [0.1.5.1] — 2026-11-24
 
 ### Fixed

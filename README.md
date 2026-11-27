@@ -11,7 +11,7 @@
 > It never makes a tool unavailable: it only changes when a tool appears in the tool table, and the model can restore
 > any hidden tool in one step.
 >
-> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.5.1`**
+> Install: **Plugin Manager → Install bundle → `github:lain312ly/dsh-lazy-tools#v0.1.6`**
 
 ## 它解决的问题
 
@@ -54,10 +54,10 @@
 **方式一：GUI**（推荐）— 打开插件管理，安装 bundle，填：
 
 ```
-github:lain312ly/dsh-lazy-tools#v0.1.5.1
+github:lain312ly/dsh-lazy-tools#v0.1.6
 ```
 
-**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.5.1` 这个 bundle」，
+**方式二：让 agent 装** — 对 agent 说「安装 `github:lain312ly/dsh-lazy-tools#v0.1.6` 这个 bundle」，
 它会调用 `plugin_manager` 的 `install_bundle`（target 同上）。
 
 **方式三：手动** — 往 `~/.dsh/profiles/<profile>/package.json` 加依赖与 bundle 条目：
@@ -65,7 +65,7 @@ github:lain312ly/dsh-lazy-tools#v0.1.5.1
 ```json
 {
   "dependencies": {
-    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.5.1"
+    "dsh-lazy-tools": "github:lain312ly/dsh-lazy-tools#v0.1.6"
   },
   "dsh": {
     "profile": {
@@ -93,69 +93,84 @@ github:lain312ly/dsh-lazy-tools#v0.1.5.1
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `visible` | `[]` | 追加到常驻层的工具名；不存在的名字会被忽略 |
+| `visible` | `[]` | 追加到常驻层的工具名；不存在的名字会被忽略（普查不会覆盖它） |
 | `promptSection` | `true` | 是否注入「延迟工具目录」提示词段 |
 | `promptOrder` | `3150` | 该段的排序号（在 MCP_SERVERS 与 TOOLS_SDK 之间） |
 | `searchLimit` | `8` | `toolbox_search` 默认返回条数，上限 50 |
 | `statusTool` | `true` | 是否注册 `toolbox_status` |
 | `resumePreserve` | `true` | 续聊时把历史里已声明的工具视为已加载 |
+| `census.enabled` | `true` | 是否定期自动普查 |
+| `census.intervalDays` | `30` | 两次普查的间隔天数，**`0` = 只手动跑**（`toolbox_census`） |
+| `census.windowDays` | `30` | 统计窗口 |
+| `census.minCallsPerDay` | `3` | 日均调用低于此值 → 延迟 |
+| `census.maxSchemaChars` | `1500` | schema 大于此值就不常驻（除非满足下一条） |
+| `census.dominantCallsPerDay` | `50` | 日均高于此值 → 不论 schema 多大都常驻 |
+| `census.maxSessions` | `200` | 最多看多少个最近会话（样本上限） |
+| `census.apply` | `true` | 是否把普查结果真的写进常驻层；`false` 只记录不生效 |
+| `census.startDelayMs` | `30000` | 首次普查在加载后多久开跑 |
 
-## 按自己的情况调常驻层（重要）
+## 常驻层会自动按你的用量重算（每月）
 
-**默认的 17 个常驻工具是作者按自己机器的一份 30 天统计挑的**（200 个会话、17,166 次工具调用），你的工具组合几乎肯定不一样：你可能没有 `job_*`、可能天天用 `subagent`、可能装了 20 个 MCP 工具。所以装好之后建议花两分钟核一遍。
+装好之后什么都不用配：插件会数你自己会话里的工具调用，据此决定哪些工具留在常驻层、哪些进延迟层。
 
-三步：
+- **计时锚在「跑完一次普查」，不是装插件那一刻**：每次普查结束写一个时间戳，下次在它之后
+  `census.intervalDays`（默认 30 天）到期。全新安装时没有记录，所以加载后约 30 秒先跑一次，之后再按间隔轮转。
+  重启 DSH 不会把到期时间推后（读的是记录里的时间戳）。
+- **周期随你改**：`census.intervalDays` 支持 1–365 天；设 `0` 就完全关掉自动普查，只留手动。
+- **改了阈值会重算**：`windowDays` / `minCallsPerDay` / `maxSchemaChars` / `dominantCallsPerDay`
+  任一变了，旧结果作废、下一次到期时按新规则重跑。
+- **`visible` 永远是加号**：无论普查算出什么，你写进 `visible` 的工具一定常驻——它不会被某个月的统计悄悄挤掉。
+- **想在生效前先看结果**：`toolbox_census({dryRun: true})` 只报数字不改任何东西；
+  `census.apply: false` 则每月照常测、写进记录，但不改动常驻层。
 
-1. **用自带的普查脚本看自己的真实调用分布**（只读：只打开 `~/.dsh/sessions/**/session.v4.jsonl.zstd`，
-   不联网、不写任何文件）：
+判定规则（与 `scripts/tool-census.py` 一致）：
 
-   ```bash
-   python scripts/tool-census.py            # 最近 30 天，日均 ≥3 次算 resident
-   python scripts/tool-census.py --days 60 --min-calls-per-day 5
-   python scripts/tool-census.py --json     # 机器可读，便于自己再加工
-   ```
+- 日均 ≥`minCallsPerDay`（默认 3）且 schema ≤`maxSchemaChars`（默认 1500 字符）→ 常驻；
+- 日均 ≥`dominantCallsPerDay`（默认 50）→ 无论 schema 多大都常驻（`pwsh` 就是这一条保住的：schema 5.0k，
+  但日均 60 次，藏它只会给每个会话加一步加载）；
+- 其余 → 延迟层；`run_code` 永远常驻且不能写进 `visible`；`toolbox_*` 四个工具自动可用。
 
-   | 参数 | 默认 | 作用 |
-   | --- | --- | --- |
-   | `--days` | `30` | 统计窗口（天） |
-   | `--min-calls-per-day` | `3` | 日均调用低于此值 → `defer` |
-   | `--max-schema-chars` | `1500` | schema 超过此值就不常驻（除非满足下一条） |
-   | `--dominant-calls-per-day` | `50` | 日均高于此值 → 无论 schema 多大都 `resident` |
-   | `--sessions` | `~/.dsh/sessions` | 日志根目录（DSH_HOME 不在默认位置时用） |
-   | `--json` | 关 | 输出完整 JSON（含每个工具的 `rows`） |
+统计口径（诚实版）：只读本机会话日志，只统计窗口内、最近的 `maxSessions` 个会话（默认 200，够覆盖一个月的常规使用）；
+分母用**实际覆盖的天数**而不是固定 30 天，所以刚用几天的新机器不会因为「除以 30」而把所有工具都判成低频；
+统计里会混进你已卸载插件留下的工具名（`ops_*`、`compress` 之类），它们本来就不在本预设的工具面里，不会造成影响。
+结果落在 `~/.dsh/lazy-tools/census.json`（DSH_HOME 不在默认位置时跟着 DSH_HOME 走），可以自己看、删了就重算。
 
-   输出示例（本机 2026-11-18 实测节选，`schema` 单位字符）：
+## 手动触发 / 手动核对
 
-   ```
-   # tool census — last 30 days, 188 sessions
+| 方式 | 用法 |
+| --- | --- |
+| 让模型跑一次 | `toolbox_census`（`dryRun: true` 只报不改），会顺手把结果写进记录并重置间隔 |
+| 看当前状态 | `toolbox_status` 的 `census` 字段：`source`、`lastRunAt`、`nextRunAt`、`measuredDays`、`sessions`、`calls`、`residentCount`、`record` |
+| 不开 DSH 先看看 | `python scripts/tool-census.py`（只读日志、不写文件，需要 Python 3.10+ 与 `zstandard`） |
 
-   tool                              calls  calls/day   schema  suggestion
-   ----------------------------------------------------------------------------
-   pwsh                               3729      124.3     3543  resident
-   edit                               2307       76.9     1195  resident
-   read                               1993      66.43      462  resident
-   write                               901      30.03      887  resident
-   grep                                636       21.2      726  resident
-   todo_write                          248       8.27      893  resident
-   web_fetch                           140       4.67      256  resident
-   send_message                         89       2.97      547  defer
-   subagent                             80       2.67     2155  defer
+```bash
+python scripts/tool-census.py            # 最近 30 天，日均 ≥3 次算 resident
+python scripts/tool-census.py --days 60 --min-calls-per-day 5
+python scripts/tool-census.py --json     # 机器可读，便于自己再加工
+```
 
-   resident (put these in the plugin's `visible`):
-     pwsh, edit, read, write, grep, todo_write, web_fetch
-   ```
+| 参数 | 默认 | 作用 |
+| --- | --- | --- |
+| `--days` | `30` | 统计窗口（天） |
+| `--min-calls-per-day` | `3` | 日均调用低于此值 → `defer` |
+| `--max-schema-chars` | `1500` | schema 超过此值就不常驻（除非满足下一条） |
+| `--dominant-calls-per-day` | `50` | 日均高于此值 → 无论 schema 多大都 `resident` |
+| `--sessions` | `~/.dsh/sessions` | 日志根目录（DSH_HOME 不在默认位置时用） |
+| `--json` | 关 | 输出完整 JSON（含每个工具的 `rows`） |
 
-   判定规则：
-   - 日均 ≥3 次且 schema ≤1500 字符 → `resident`（常驻，省的加载步骤比省下的字符更值钱）
-   - 日均 ≥50 次 → 无论 schema 多大都 `resident`（比如 `pwsh` 3.5k 字符，但一天用 100 次）
-   - 其余 → `defer`（留在延迟层，需要时 `toolbox_load` 一次）
-   - `run_code` 永远常驻且不能写进 `visible`；`toolbox_*` 三件套自动可用
+> 脚本在仓库的 `scripts/tool-census.py`；从 GitHub 安装的 bundle 里它位于
+> `~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/`（0.1.5 起随包发布）。
+> 插件内部的普查不依赖 Python，走 DSH 的 `sessionQuery` 服务读同一批日志。
 
-   > 脚本在仓库的 `scripts/tool-census.py`；从 GitHub 安装的 bundle 里它位于
-   > `~/.dsh/profiles/<profile>/node_modules/dsh-lazy-tools/scripts/`（0.1.5 起随包发布）。
-   > 需要 Python 3.10+ 与 `zstandard`（`pip install zstandard`）。
+本机实测（2026-11-27，`toolbox_census` 真实运行）：109 个会话、10,069 次调用、覆盖 29.9 天、耗时 3.7 秒，
+算出常驻层 9 项（`pwsh` `edit` `read` `write` `read_image` `todo_write` `grep` `web_fetch` `job_output`）；
+同期 `subagent`（日均 0.8 次、schema 2.3k）、`skill`、`present`、`glob` 进了延迟层。
 
-2. **把你确实每次都要用的写进 `visible`**：
+## 按自己的情况微调常驻层
+
+普查是自动的，但**你的口味只有你知道**，所以还可以手动覆盖：
+
+1. **把每次都要用的写进 `visible`**（普查不会覆盖它）：
 
    ```yaml
    - id: lazy-tools
@@ -163,13 +178,19 @@ github:lain312ly/dsh-lazy-tools#v0.1.5.1
        visible: [present, send_message, web_search]
    ```
 
-3. **新开一个会话核对**：调 `toolbox_status`，看返回的 `visible` 是否包含你加的名字、`awaitingCount` 是否下降。写错的名字会被静默忽略。
+2. **想让普查更保守/更激进**：`census.minCallsPerDay` 调低会让更多工具常驻；`census.maxSchemaChars`
+   调高会容忍更大的 schema；`census.dominantCallsPerDay` 调低会让「用得很多但 schema 很大」的工具更容易常驻。
+
+3. **新开一个会话核对**：调 `toolbox_status`，看 `visible` 是否包含你加的名字、`census.source` 是 `census`
+   还是 `default-list`。写错的名字会被静默忽略。
 
 几条实操建议：
 
-- **延迟层最划算的是「schema 大、频率低」的工具**（`subagent` 2.1k、`cua_driver_native__*` 6.6k、`office_*`、`workflow`）——它们一年也用不了几次，却每次都在占位置；
+- **延迟层最划算的是「schema 大、频率低」的工具**（`subagent`、`workflow`、`office_*`、`cua_driver_native__*`）——
+  它们一年也用不了几次，却每次都在占位置；
 - **不要为了省字符把高频小工具藏起来**：`read`/`grep`/`todo_write` 这种几百字符、一天几十次的，藏了只会多一步加载；
-- 统计窗口里可能包含**已经卸载的插件**（`ops_*`、`compress` 之类），以 `toolbox_status` 的 `awaiting` 名单为准；
+- **一次普查的结论不要当成铁律**：某个月你把某个工具用得少了，它就会掉回延迟层——需要时 `toolbox_load` 一次就回来，
+  或者直接写进 `visible` 钉住；
 - 连「延迟工具目录」提示词段都不想要可以设 `promptSection: false`，但模型就不知道还有哪些工具可加载，只会在明确知道名字时才 `toolbox_load`——通常不建议。
 
 ## 工具
@@ -178,7 +199,8 @@ github:lain312ly/dsh-lazy-tools#v0.1.5.1
 | --- | --- |
 | `toolbox_search(query, limit?)` | 在**当前预设能拿到的**已隐藏工具里按分词后的关键词搜索，返回名称、一句话描述 |
 | `toolbox_load(names[])` | 激活指定工具；返回参数名与必填项，下一步即可调用。本预设没装配的名字会出现在 `unavailable` 里，不会被伪造成"已激活" |
-| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate` 能力、`composedToolCount`（本会话真实工具面）、`visible`（本步真能调用的常驻工具，`visible ⊆ agentToolCount`）、常驻/已加载/未加载清单、`dropped`（因切预设而失效的激活） |
+| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate` 能力、`composedToolCount`（本会话真实工具面）、`visible`（本步真能调用的常驻工具，`visible ⊆ agentToolCount`）、常驻/已加载/未加载清单、`dropped`（因切预设而失效的激活）、`census`（上次/下次普查时间、样本量、常驻项数、记录文件路径） |
+| `toolbox_census(dryRun?)` | 立刻数一遍工具调用并重算常驻层；`dryRun: true` 只报 `resident`/`inForce`/`added`/`removed` 和 top 15，不改任何东西 |
 
 名字已经知道时只需一步：`toolbox_load(["schedule_list"])`。`toolbox_search` 是「只知道意图、不知道名字」时的兜底。
 

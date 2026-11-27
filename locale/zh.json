@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "渐进式工具加载",
-    "description": "把不常用的工具从每次请求里藏起来，模型用 toolbox_search / toolbox_load 按需加载；加载动作走 DeepSeek 的 tool_addition / defer_loading 通道，前缀缓存不重发工具定义。新对话立刻生效，已存在的会话在插件加载时补上限制（其日志里已声明过的工具会保留）。附带 tool-census.py 按你自己的调用记录算该常驻哪些工具。已加载的工具在本会话内不能收回，插件随时可以禁用或移除。",
+    "description": "把不常用的工具从每次请求里藏起来，模型用 toolbox_search / toolbox_load 按需加载；加载动作走 DeepSeek 的 tool_addition / defer_loading 通道，前缀缓存不重发工具定义。新对话立刻生效，已存在的会话在插件加载时补上限制（其日志里已声明过的工具会保留）。常驻层每月按你自己的调用记录自动重算一次（toolbox_census 可随时手动跑，周期可配），也可用附带的 tool-census.py 手动查看。已加载的工具在本会话内不能收回，插件随时可以禁用或移除。",
     "detail": "docs/DETAIL.zh.md"
   }
 }

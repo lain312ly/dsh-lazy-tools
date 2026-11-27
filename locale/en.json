@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Lazy tools",
-    "description": "Keeps rarely used tools out of every request and loads them on demand with toolbox_search / toolbox_load; activation travels through DeepSeek tool_addition / defer_loading instead of resending tool definitions. New conversations start lazy immediately; existing ones are re-restricted when the bundle loads (tools their log already declared stay loaded). Ships tool-census.py to size the resident layer from your own call history. A loaded tool stays resident for that session, while the bundle itself can be disabled or removed at any time.",
+    "description": "Keeps rarely used tools out of every request and loads them on demand with toolbox_search / toolbox_load; activation travels through DeepSeek tool_addition / defer_loading instead of resending tool definitions. New conversations start lazy immediately; existing ones are re-restricted when the bundle loads (tools their log already declared stay loaded). Re-derives the resident layer from your own call history once a month (toolbox_census measures on demand, interval configurable); ships tool-census.py for a manual look. A loaded tool stays resident for that session, while the bundle itself can be disabled or removed at any time.",
     "detail": "docs/DETAIL.en.md"
   }
 }

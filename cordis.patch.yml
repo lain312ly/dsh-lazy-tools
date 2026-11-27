@@ -8,3 +8,16 @@
         searchLimit: 8
         statusTool: true
         resumePreserve: true
+        # The resident layer re-calibrates from this machine's own tool calls.
+        # The interval counts from the end of the last census, not from install;
+        # set intervalDays: 0 to keep it manual (toolbox_census).
+        census:
+          enabled: true
+          intervalDays: 30
+          windowDays: 30
+          minCallsPerDay: 3
+          maxSchemaChars: 1500
+          dominantCallsPerDay: 50
+          maxSessions: 200
+          apply: true
+          startDelayMs: 30000

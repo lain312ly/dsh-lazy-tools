@@ -15,25 +15,69 @@
  * deny-list computed from the agent's own pre-restriction view hides exactly what
  * the plugin can prove it should hide.
  *
+ * The resident layer is a measurement, not a taste: a monthly census counts this
+ * machine's own tool calls from the session logs and re-derives which tools stay
+ * visible. The first census runs on the first load (or the first load after the
+ * window expired) and every run records its own timestamp, so the next one is
+ * due one interval later — not at install time. `census.intervalDays` changes
+ * the period; `0` keeps the census manual (`toolbox_census`).
+ *
  * No DSH core change is involved and no dependency is imported: tool definitions
  * are plain objects understood by `ctx.tools.register`.
  */
+
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 
 export const name = 'lazy-tools'
 export const inject = ['tools', 'systemPrompt']
 
 /** Tools that implement the disclosure mechanism itself; never hidden. */
-const TOOLBOX = ['toolbox_search', 'toolbox_load', 'toolbox_status']
+const TOOLBOX = ['toolbox_search', 'toolbox_load', 'toolbox_status', 'toolbox_census']
 
 /** PTC presentation transport; `tools.restrict()` rejects this name. */
 const RUN_CODE = 'run_code'
 
-/** Tool surface kept visible by default (missing names are ignored).
+/** Where the census keeps its result: `<DSH_HOME>/lazy-tools/census.json`. */
+const CENSUS_RECORD = join('lazy-tools', 'census.json')
+
+/** Upper bound on one `setTimeout`, so a long interval survives clock changes.
  *
- * Chosen from a 30-day tool-call census of this machine's session logs
- * (200 sessions, 17,166 calls): every non-lazy tool with >=100 calls/month and
- * a schema under 1.5k characters stays resident; the rest is deferred.
- * `run_code` is exempt because `tools.restrict()` cannot name it.
+ * A delay above this is re-armed in steps instead of being trusted to fire
+ * once, and `setTimeout` clamps anything past 2^31-1 ms to an immediate run.
+ */
+const CENSUS_POLL_MS = 6 * 60 * 60 * 1000
+
+/** Defaults for the monthly census; every field is configurable. */
+const DEFAULT_CENSUS = {
+  /** Run the census on a schedule at all. */
+  enabled: true,
+  /** Days between runs; `0` means "only when toolbox_census is called". */
+  intervalDays: 30,
+  /** Look-back window for the counted calls. */
+  windowDays: 30,
+  /** A tool needs at least this many calls per day to stay resident... */
+  minCallsPerDay: 3,
+  /** ...and a declaration no larger than this many characters... */
+  maxSchemaChars: 1500,
+  /** ...unless it is used at least this often per day, whatever its size. */
+  dominantCallsPerDay: 50,
+  /** Newest sessions considered; the sample is bounded on purpose. */
+  maxSessions: 200,
+  /** Delay after load before the first run, so startup is not disturbed. */
+  startDelayMs: 30 * 1000,
+  /** Write the result into the effective resident layer. */
+  apply: true,
+}
+
+/** Tool surface kept visible until a census replaces it (missing names are ignored).
+ *
+ * Measured on the author's machine (30 days, 200 sessions, 17,166 calls): every
+ * non-lazy tool with >=100 calls/month and a schema under 1.5k characters stayed
+ * resident; the rest is deferred. `run_code` is exempt because
+ * `tools.restrict()` cannot name it. The monthly census re-derives this list
+ * from your own logs, so the constant is only the first-run fallback.
  */
 const DEFAULT_VISIBLE = [
   'read',
@@ -64,6 +108,7 @@ function normalizeConfig(raw) {
     searchLimit: 8,
     statusTool: true,
     resumePreserve: true,
+    census: { ...DEFAULT_CENSUS },
   }
   if (raw === null || typeof raw !== 'object') return config
   if (Array.isArray(raw.visible)) {
@@ -76,6 +121,34 @@ function normalizeConfig(raw) {
   }
   if (typeof raw.statusTool === 'boolean') config.statusTool = raw.statusTool
   if (typeof raw.resumePreserve === 'boolean') config.resumePreserve = raw.resumePreserve
+
+  const census = raw.census
+  if (census !== null && typeof census === 'object') {
+    const clamp = (value, low, high) => Math.min(Math.max(value, low), high)
+    if (typeof census.enabled === 'boolean') config.census.enabled = census.enabled
+    if (typeof census.apply === 'boolean') config.census.apply = census.apply
+    if (Number.isFinite(census.intervalDays) && census.intervalDays >= 0) {
+      config.census.intervalDays = clamp(census.intervalDays, 0, 365)
+    }
+    if (Number.isFinite(census.windowDays) && census.windowDays >= 1) {
+      config.census.windowDays = clamp(census.windowDays, 1, 365)
+    }
+    if (Number.isFinite(census.minCallsPerDay) && census.minCallsPerDay >= 0) {
+      config.census.minCallsPerDay = census.minCallsPerDay
+    }
+    if (Number.isFinite(census.dominantCallsPerDay) && census.dominantCallsPerDay >= 0) {
+      config.census.dominantCallsPerDay = census.dominantCallsPerDay
+    }
+    if (Number.isFinite(census.maxSchemaChars) && census.maxSchemaChars >= 0) {
+      config.census.maxSchemaChars = Math.floor(census.maxSchemaChars)
+    }
+    if (Number.isInteger(census.maxSessions) && census.maxSessions >= 1) {
+      config.census.maxSessions = Math.min(census.maxSessions, 500)
+    }
+    if (Number.isFinite(census.startDelayMs) && census.startDelayMs >= 0) {
+      config.census.startDelayMs = census.startDelayMs
+    }
+  }
   return config
 }
 
@@ -110,20 +183,44 @@ function restrictableFromError(error) {
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig)
 
-  const visible = new Set()
-  for (const name of DEFAULT_VISIBLE) if (name !== RUN_CODE) visible.add(name)
-  for (const name of config.visible) if (name !== RUN_CODE) visible.add(name)
-
   /** sessionId -> { agent, activated:Set<string>, snapshot:Map, dispose? } */
   const agents = new Map()
   /** Every tool definition this plugin has observed, from the global or an agent view. */
   const universe = new Map()
+  /** Last census result this instance adopted, or `undefined` before the first run. */
+  let census = undefined
+  /** When the current census was taken (ms), restored from the record on load. */
+  let censusAt = undefined
+  let censusTimer = undefined
+  let censusRunning = false
+  let residentCache = undefined
   let mutating = false
   let refreshQueued = false
 
   const warn = (message, error) => {
     const detail = error === undefined ? '' : String((error && error.message) || error)
     console.warn(`[lazy-tools] ${message}${detail === '' ? '' : `: ${detail}`}`)
+  }
+
+  /** Names in the resident layer right now: static fallback, census, user additions.
+   *
+   * The census replaces the shipped default only when it ran and `census.apply`
+   * is on; `visible` stays additive in every case, so a user override never
+   * disappears because a tool got quiet.
+   */
+  function residentSet() {
+    if (residentCache !== undefined) return residentCache
+    const base = census !== undefined && config.census.apply ? census.resident : DEFAULT_VISIBLE
+    const set = new Set()
+    for (const name of base) if (name !== RUN_CODE) set.add(name)
+    for (const name of config.visible) if (name !== RUN_CODE) set.add(name)
+    residentCache = set
+    return set
+  }
+
+  /** Forget the derived resident layer after a census or config change. */
+  function invalidateResident() {
+    residentCache = undefined
   }
 
   const absorb = definitions => {
@@ -157,9 +254,10 @@ export function apply(ctx, rawConfig) {
 
   /** Names this plugin would hide for one agent, given its activated set. */
   function denyFor(snapshot, activated) {
+    const resident = residentSet()
     const deny = []
     for (const name of snapshot.keys()) {
-      if (name === RUN_CODE || visible.has(name) || TOOLBOX.includes(name)) continue
+      if (name === RUN_CODE || resident.has(name) || TOOLBOX.includes(name)) continue
       if (activated.has(name)) continue
       deny.push(name)
     }
@@ -255,9 +353,10 @@ export function apply(ctx, rawConfig) {
     }
     agents.set(agent.id, state)
     if (!config.resumePreserve) return state
+    const resident = residentSet()
     const declared = previouslyDeclared(agent)
     for (const name of declared) {
-      if (name === RUN_CODE || visible.has(name) || TOOLBOX.includes(name)) continue
+      if (name === RUN_CODE || resident.has(name) || TOOLBOX.includes(name)) continue
       state.activated.add(name)
     }
     return state
@@ -318,9 +417,10 @@ export function apply(ctx, rawConfig) {
   function awaitingNames(agent) {
     const state = activatedOf(agent)
     const pool = poolFor(agent)
+    const resident = residentSet()
     const names = []
     for (const name of pool.keys()) {
-      if (name === RUN_CODE || visible.has(name) || TOOLBOX.includes(name)) continue
+      if (name === RUN_CODE || resident.has(name) || TOOLBOX.includes(name)) continue
       if (state !== undefined && state.activated.has(name)) continue
       names.push(name)
     }
@@ -449,6 +549,10 @@ export function apply(ctx, rawConfig) {
   // A plugin unload must not leave per-agent restrictions behind.
   try {
     ctx.effect(() => () => {
+      if (censusTimer !== undefined) {
+        clearTimeout(censusTimer)
+        censusTimer = undefined
+      }
       for (const state of agents.values()) {
         try {
           state.dispose?.()
@@ -460,6 +564,323 @@ export function apply(ctx, rawConfig) {
     }, 'lazy-tools:release-agent-restrictions')
   } catch (error) {
     warn('could not install the unload cleanup', error)
+  }
+
+  // ---------------------------------------------------------------------
+  // Census: re-derive the resident layer from this machine's own tool calls.
+  //
+  // Timing is anchored on the run, not the install: every run stamps
+  // `lastAt`, and the next one is due `census.intervalDays` after that stamp.
+  // With no record yet, the first run happens `census.startDelayMs` after
+  // load — so a fresh install measures before it decides anything.
+  // ---------------------------------------------------------------------
+
+  /** Root of DSH's data directory, resolved the way DSH itself does. */
+  function dshHome() {
+    const configured = process.env.DSH_HOME
+    if (typeof configured === 'string' && configured.length > 0) return configured
+    return join(homedir(), '.dsh')
+  }
+
+  /** Absolute path of the census record. */
+  function censusPath() {
+    return join(dshHome(), CENSUS_RECORD)
+  }
+
+  /** Adopt a persisted census result, if it matches the current thresholds. */
+  function loadCensusRecord() {
+    let text
+    try {
+      text = readFileSync(censusPath(), 'utf8')
+    } catch {
+      return
+    }
+    let record
+    try {
+      record = JSON.parse(text)
+    } catch (error) {
+      warn('could not parse the census record; it will be rewritten', error)
+      return
+    }
+    if (record === null || typeof record !== 'object') return
+    if (!Number.isFinite(record.lastAt) || !Array.isArray(record.resident)) return
+    censusAt = record.lastAt
+    if (record.thresholds !== undefined && !sameThresholds(record.thresholds)) {
+      // The user changed the knobs: keep the timestamp (the cadence continues)
+      // but drop the numbers, so the next run recomputes under the new rules.
+      return
+    }
+    census = {
+      lastAt: record.lastAt,
+      windowDays: Number.isFinite(record.windowDays) ? record.windowDays : config.census.windowDays,
+      measuredDays: Number.isFinite(record.measuredDays) ? record.measuredDays : config.census.windowDays,
+      sessions: Number.isFinite(record.sessions) ? record.sessions : 0,
+      calls: Number.isFinite(record.calls) ? record.calls : 0,
+      failed: Number.isFinite(record.failed) ? record.failed : 0,
+      truncated: record.truncated === true,
+      rows: Array.isArray(record.rows) ? record.rows : [],
+      resident: record.resident.filter(name => typeof name === 'string'),
+    }
+    invalidateResident()
+  }
+
+  /** The threshold set a result was computed with. */
+  function censusThresholds() {
+    return {
+      windowDays: config.census.windowDays,
+      minCallsPerDay: config.census.minCallsPerDay,
+      maxSchemaChars: config.census.maxSchemaChars,
+      dominantCallsPerDay: config.census.dominantCallsPerDay,
+    }
+  }
+
+  /** Whether a record's thresholds match the live config. */
+  function sameThresholds(thresholds) {
+    const current = censusThresholds()
+    if (thresholds === null || typeof thresholds !== 'object') return false
+    return Object.keys(current).every(key => thresholds[key] === current[key])
+  }
+
+  /** Persist one result; a failure only costs the next run a re-scan. */
+  function saveCensusRecord(result) {
+    const path = censusPath()
+    const payload = {
+      version: 1,
+      lastAt: result.lastAt,
+      thresholds: censusThresholds(),
+      windowDays: config.census.windowDays,
+      measuredDays: result.measuredDays,
+      sessions: result.sessions,
+      calls: result.calls,
+      failed: result.failed,
+      truncated: result.truncated,
+      resident: result.resident,
+      rows: result.rows,
+    }
+    try {
+      mkdirSync(dirname(path), { recursive: true })
+      const temporary = `${path}.tmp`
+      writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      renameSync(temporary, path)
+    } catch (error) {
+      warn('could not write the census record', error)
+    }
+  }
+
+  /** Tool-call counts from one session's events, inside the window.
+   *
+   * Also reports the oldest counted event, so a short history does not get
+   * divided by the full window: three days of logs would otherwise look like a
+   * third of the real usage rate.
+   *
+   * @param events - one session's events.
+   * @param sinceMs - window start.
+   * @param counts - name -> call count, accumulated across sessions.
+   * @returns the oldest counted event time, or `undefined` when nothing counted.
+   */
+  function countCalls(events, sinceMs, counts) {
+    if (!Array.isArray(events)) return undefined
+    let earliest
+    for (const event of events) {
+      if (event === null || typeof event !== 'object') continue
+      const type = event.type
+      if (type !== 'tool/call' && type !== 'tool/ptc-dispatch') continue
+      const time = Number.isFinite(event.time) ? event.time : 0
+      if (time < sinceMs) continue
+      const data = event.data
+      if (data === null || typeof data !== 'object') continue
+      const toolName = data.name
+      if (typeof toolName !== 'string' || toolName.length === 0) continue
+      counts.set(toolName, (counts.get(toolName) ?? 0) + 1)
+      if (earliest === undefined || time < earliest) earliest = time
+    }
+    return earliest
+  }
+
+  /** Read one session's events through the session-query service. */
+  async function eventsOf(service, sessionId) {
+    if (typeof service.inspectSession === 'function') {
+      return await service.inspectSession(sessionId, session => {
+        if (typeof session.snapshotEvents !== 'function') throw new Error('session snapshot is unavailable')
+        return session.snapshotEvents()
+      })
+    }
+    const snapshot = await service.readSession(sessionId)
+    return snapshot === undefined ? [] : snapshot.events
+  }
+
+  /** Which tools stay resident, given their measured usage and declaration size.
+   *
+   * @param counts - name -> call count inside the window.
+   * @param days - measured span the counts came from, so a young history is not
+   * divided by the configured window.
+   */
+  function censusRows(counts, days) {
+    globalDefinitions()
+    const span = Math.max(days, 1)
+    const rows = []
+    for (const [toolName, calls] of counts) {
+      const perDay = calls / span
+      const definition = universe.get(toolName)
+      const schemaChars = definition === undefined ? null : asJson(definition).length
+      const resident = toolName !== RUN_CODE
+        && !TOOLBOX.includes(toolName)
+        && (perDay >= config.census.dominantCallsPerDay
+          || (schemaChars !== null
+            && schemaChars <= config.census.maxSchemaChars
+            && perDay >= config.census.minCallsPerDay))
+      rows.push({ name: toolName, calls, perDay: Math.round(perDay * 100) / 100, schemaChars, resident })
+    }
+    rows.sort((left, right) => right.calls - left.calls || left.name.localeCompare(right.name))
+    return rows
+  }
+
+  /** Rebuild every live agent's restriction against a new resident layer.
+   *
+   * Without this the new layer would only reach agents created afterwards,
+   * which for a long-running session means "next month, maybe".
+   */
+  function reapplyAll() {
+    invalidateResident()
+    // The frozen catalog describes the old layer; let the next assembly rebuild it.
+    for (const state of agents.values()) state.catalog = undefined
+    mutating = true
+    try {
+      for (const state of agents.values()) {
+        try {
+          applyRestriction(state)
+        } catch (error) {
+          warn(`could not re-apply the restriction for ${state.agent.id}`, error)
+        }
+      }
+    } finally {
+      mutating = false
+    }
+  }
+
+  /** Count calls across recent sessions, derive the layer, and adopt the result.
+   *
+   * A dry run returns the same measurement without touching the cadence, the
+   * record, or the live restrictions.
+   */
+  async function runCensus(options = {}) {
+    const dryRun = options.dryRun === true
+    if (censusRunning) return { ok: false, error: 'a census is already running' }
+    const service = ctx.get('sessionQuery')
+    if (service === undefined) {
+      return { ok: false, error: 'the sessionQuery service is not mounted; tool usage cannot be counted' }
+    }
+    censusRunning = true
+    const startedAt = Date.now()
+    const since = startedAt - config.census.windowDays * 86400000
+    try {
+      let records = await service.listSessions()
+      if (!Array.isArray(records)) records = []
+      const candidates = records
+        .filter(record => record !== null && typeof record === 'object' && record.header !== undefined)
+        .sort((left, right) => (right.header.createdAt ?? 0) - (left.header.createdAt ?? 0))
+      const selected = []
+      let truncated = false
+      for (const record of candidates) {
+        const live = record.live === true
+        if (!live && (record.header.createdAt ?? 0) < since) continue
+        selected.push(record)
+        if (selected.length >= config.census.maxSessions) {
+          truncated = candidates.length > selected.length
+          break
+        }
+      }
+
+      const counts = new Map()
+      let sessions = 0
+      let failed = 0
+      let earliest
+      for (const record of selected) {
+        try {
+          const oldest = countCalls(await eventsOf(service, record.header.id), since, counts)
+          if (oldest !== undefined && (earliest === undefined || oldest < earliest)) earliest = oldest
+          sessions++
+        } catch (error) {
+          failed++
+          warn(`could not read the session ${record.header.id} for the census`, error)
+        }
+        // Yield between sessions: the census must not stall the agent loop.
+        await new Promise(resolve => setImmediate(resolve))
+      }
+
+      let calls = 0
+      for (const count of counts.values()) calls += count
+      // Divide by the span the counts actually cover, capped at the window.
+      const measuredDays = earliest === undefined
+        ? config.census.windowDays
+        : Math.min(config.census.windowDays, Math.max((startedAt - earliest) / 86400000, 1))
+      const rows = censusRows(counts, measuredDays)
+      const resident = rows.filter(row => row.resident).map(row => row.name)
+      const result = {
+        ok: true,
+        lastAt: Date.now(),
+        durationMs: Date.now() - startedAt,
+        windowDays: config.census.windowDays,
+        measuredDays: Math.round(measuredDays * 10) / 10,
+        sessions,
+        calls,
+        failed,
+        truncated,
+        rows,
+        resident,
+        applied: !dryRun && config.census.apply,
+        dryRun,
+      }
+      if (dryRun) return result
+      censusAt = result.lastAt
+      census = result
+      if (config.census.apply) reapplyAll()
+      else invalidateResident()
+      saveCensusRecord(result)
+      return result
+    } catch (error) {
+      return { ok: false, error: String((error && error.message) || error) }
+    } finally {
+      censusRunning = false
+    }
+  }
+
+  /** When the next automatic census is due, or `undefined` when it never runs. */
+  function censusDueAt() {
+    if (!config.census.enabled || config.census.intervalDays <= 0) return undefined
+    if (censusAt === undefined) return Date.now() + config.census.startDelayMs
+    return censusAt + config.census.intervalDays * 86400000
+  }
+
+  /** Arm one timer for the next due census, re-arming in bounded steps. */
+  function scheduleCensus() {
+    if (censusTimer !== undefined) {
+      clearTimeout(censusTimer)
+      censusTimer = undefined
+    }
+    const due = censusDueAt()
+    if (due === undefined) return
+    const delay = Math.max(Math.min(due - Date.now(), CENSUS_POLL_MS), 50)
+    censusTimer = setTimeout(() => {
+      censusTimer = undefined
+      if (Date.now() < due) {
+        scheduleCensus()
+        return
+      }
+      runCensus()
+        .then(result => {
+          if (result.ok) {
+            warn(`census re-derived the resident layer in ${result.durationMs}ms: `
+              + `${result.resident.length} resident, ${result.calls} calls in ${result.sessions} sessions `
+              + `over ${result.measuredDays} days`)
+          } else {
+            warn(`census did not run: ${result.error}`)
+          }
+        })
+        .catch(error => warn('census failed', error))
+        .finally(() => scheduleCensus())
+    }, delay)
+    if (typeof censusTimer.unref === 'function') censusTimer.unref()
   }
 
   // ---------------------------------------------------------------------
@@ -501,11 +922,12 @@ export function apply(ctx, rawConfig) {
         const agent = exec ? exec.agent : undefined
         const state = agent === undefined ? undefined : ensureState(agent)
         const pool = poolFor(agent)
+        const resident = residentSet()
         // Only surface tools the step cannot already call.
         const view = agent === undefined ? new Set() : agentView(agent)
         const results = []
         for (const [toolName, definition] of pool) {
-          if (toolName === RUN_CODE || visible.has(toolName) || TOOLBOX.includes(toolName)) continue
+          if (toolName === RUN_CODE || resident.has(toolName) || TOOLBOX.includes(toolName)) continue
           if (view.has(toolName)) continue
           if (state !== undefined && state.activated.has(toolName)) continue
           const description = typeof definition.description === 'string' ? definition.description : ''
@@ -633,6 +1055,68 @@ export function apply(ctx, rawConfig) {
   }
 
   // ---------------------------------------------------------------------
+  // toolbox_census: re-measure tool usage and re-derive the resident layer.
+  // ---------------------------------------------------------------------
+
+  try {
+    ctx.tools.register({
+      name: 'toolbox_census',
+      description: 'Count this machine\'s recent tool calls and re-derive which tools stay visible. The plugin runs it automatically every `census.intervalDays`; call it to measure now. Set dryRun to report without changing anything.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dryRun: {
+            type: 'boolean',
+            description: 'Report the measurement without applying it or restarting the interval.',
+          },
+        },
+        additionalProperties: false,
+      },
+      output: {
+        schema: { type: 'object' },
+        render: (_args, value) => textBlock(asJson(value)),
+      },
+      execute: async args => {
+        const dryRun = args !== null && typeof args === 'object' && args.dryRun === true
+        const previous = [...residentSet()].sort()
+        const result = await runCensus({ dryRun })
+        if (result.ok !== true) throw new Error(`census failed: ${result.error}`)
+        // What this run measured (merged with the user's additions), and what
+        // the session is actually running on. A dry run reports the former.
+        const measured = [...new Set([...result.resident, ...config.visible])].sort()
+        const inForce = result.applied === true ? [...residentSet()].sort() : previous
+        const measuredSet = new Set(measured)
+        const previousSet = new Set(previous)
+        return {
+          applied: result.applied === true,
+          dryRun,
+          measuredAt: new Date(result.lastAt).toISOString(),
+          windowDays: result.windowDays,
+          measuredDays: result.measuredDays,
+          durationMs: result.durationMs,
+          sessions: result.sessions,
+          calls: result.calls,
+          failedSessions: result.failed,
+          sampleTruncated: result.truncated,
+          thresholds: censusThresholds(),
+          resident: measured,
+          inForce,
+          added: measured.filter(name => !previousSet.has(name)),
+          removed: previous.filter(name => !measuredSet.has(name)),
+          top: result.rows.slice(0, 15),
+          note: result.applied === true
+            ? 'The resident layer changed; live agents were re-restricted against it.'
+            : (dryRun
+              ? 'Dry run: nothing was applied or recorded.'
+              : 'census.apply is off: the measurement was recorded but the resident layer is unchanged.'),
+        }
+      },
+    })
+  } catch (error) {
+    warn('could not register toolbox_census', error)
+  }
+
+  // ---------------------------------------------------------------------
   // toolbox_status: capability probe and diagnostics.
   // ---------------------------------------------------------------------
 
@@ -673,6 +1157,7 @@ export function apply(ctx, rawConfig) {
             }
           }
 
+          const due = censusDueAt()
           return {
             provider: selection !== undefined ? selection.provider : null,
             model: selection !== undefined ? selection.model : null,
@@ -684,11 +1169,26 @@ export function apply(ctx, rawConfig) {
             // What the step can call right now. `pool` is the composition the
             // agent *could* call; a resident name outside it (universe fallback)
             // or one hidden by a stacked restriction is not visible to the model.
-            visible: [...visible].filter(toolName => view.has(toolName)),
+            visible: [...residentSet()].filter(toolName => view.has(toolName)),
             activated: state !== undefined ? [...state.activated] : [],
             dropped: state !== undefined ? [...state.dropped] : [],
             awaitingCount: awaiting.length,
             awaiting,
+            census: {
+              enabled: config.census.enabled,
+              intervalDays: config.census.intervalDays,
+              source: census === undefined
+                ? 'default-list'
+                : (config.census.apply ? 'census' : 'census-not-applied'),
+              lastRunAt: censusAt === undefined ? null : new Date(censusAt).toISOString(),
+              nextRunAt: due === undefined ? null : new Date(due).toISOString(),
+              windowDays: config.census.windowDays,
+              measuredDays: census === undefined ? null : census.measuredDays,
+              sessions: census === undefined ? null : census.sessions,
+              calls: census === undefined ? null : census.calls,
+              residentCount: residentSet().size,
+              record: censusPath(),
+            },
           }
         },
       })
@@ -712,6 +1212,10 @@ export function apply(ctx, rawConfig) {
       warn('could not register the deferred-tool prompt section', error)
     }
   }
+
+  // Adopt the last census before any agent is restricted: the record decides
+  // which tools are resident, so a late read would re-hide a measured layer.
+  loadCensusRecord()
 
   // Re-attach to agents that were already live when this instance loaded: a
   // plugin update or hot reload releases every restriction, and `agent/created`
@@ -738,5 +1242,14 @@ export function apply(ctx, rawConfig) {
     }
   } catch (error) {
     warn('could not enumerate live agents on load', error)
+  }
+
+  // Arm the monthly census. The first run happens after `census.startDelayMs`
+  // because no record exists yet; later runs are due one interval after the
+  // previous run's own timestamp, so a restart cannot postpone them.
+  try {
+    scheduleCensus()
+  } catch (error) {
+    warn('could not schedule the census', error)
   }
 }

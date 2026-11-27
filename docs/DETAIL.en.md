@@ -58,7 +58,29 @@ the session as loaded, so a resumed conversation does not lose half of its surfa
 | --- | --- |
 | `toolbox_search(query, limit?)` | Search the tools this preset composed but the plugin hides, tokenising the query |
 | `toolbox_load(names[])` | Activate tools for the calling agent; returns parameter names and required fields. Names this session never composed land in `unavailable`; names the installation does not know land in `unknown` |
-| `toolbox_status()` | Diagnostics: provider/model, route `toolUpdate`, `composedToolCount`, resident / activated / awaiting / dropped |
+| `toolbox_status()` | Diagnostics: provider/model, route `toolUpdate`, `composedToolCount`, resident / activated / awaiting / dropped, `census` |
+| `toolbox_census(dryRun?)` | Measure the same usage now and re-derive the resident layer; `dryRun` reports without changing anything |
+
+## The resident layer calibrates itself every month
+
+The resident layer is not a frozen constant; it is re-derived from this machine's own usage:
+
+- Source: DSH's `sessionQuery` service — `listSessions()` for the corpus, `inspectSession()` for events; the plugin
+  counts `tool/call` and `tool/ptc-dispatch` (only the latter names the inner tool under a PTC preset);
+- Read-only, bounded to the sessions inside `windowDays` (default 30) up to `maxSessions` (default 200), yielding with
+  `setImmediate` between sessions so the agent loop keeps running. Measured here: 109 sessions, 10,069 calls, 3.7 s;
+- The divisor is the span the counts actually cover (oldest counted event to now, capped at the window), so a machine
+  with three days of history is not divided by 30 and does not mark everything as rare;
+- Schema sizes come from the declarations the plugin itself observed (`universe`), not from `request/header.tools`;
+- The clock starts when a census *finishes*: the result carries `lastAt` and the next run is due
+  `lastAt + intervalDays`. With no record yet (fresh install) the first run happens `startDelayMs` (30 s) after load.
+  The interval is configurable (1–365 days); `0` keeps it manual;
+- Changing a threshold (`windowDays` / `minCallsPerDay` / `maxSchemaChars` / `dominantCallsPerDay`) invalidates the old
+  result, so the next run recomputes under the new rules;
+- The result lives in `$DSH_HOME/lazy-tools/census.json` and is adopted on load, so a restart does not rescan;
+- Applying it rebuilds every live agent's restriction and unfreezes the prompt catalog for the next assembly;
+- `visible` always adds on top: a tool you pin is never squeezed out by the census, and `census.apply: false` records the
+  measurement without altering the layer.
 
 ## Configuration (the `lazy-tools` row in `cordis.patch.yml`)
 
@@ -70,6 +92,15 @@ the session as loaded, so a resumed conversation does not lose half of its surfa
 | `searchLimit` | `8` | Default result count for `toolbox_search`, capped at 50 |
 | `statusTool` | `true` | Register `toolbox_status` |
 | `resumePreserve` | `true` | Treat tools declared earlier in the session as loaded on resume |
+| `census.enabled` | `true` | Run the scheduled census at all |
+| `census.intervalDays` | `30` | Days between runs; `0` keeps it manual |
+| `census.windowDays` | `30` | Look-back window |
+| `census.minCallsPerDay` | `3` | Below this rate a tool is deferred |
+| `census.maxSchemaChars` | `1500` | Above this size a tool is deferred unless dominant |
+| `census.dominantCallsPerDay` | `50` | At or above this rate a tool stays resident regardless of size |
+| `census.maxSessions` | `200` | Newest sessions considered |
+| `census.apply` | `true` | Whether the result becomes the resident layer |
+| `census.startDelayMs` | `30000` | Delay before the first run after load |
 
 Example — keep `subagent` and `web_search` resident too:
 
@@ -79,10 +110,9 @@ Example — keep `subagent` and `web_search` resident too:
     visible: [subagent, web_search]
 ```
 
-The default resident layer comes from a 30-day census of the author's machine, so **tune it to your own usage after
-installing**: run `python scripts/tool-census.py --days 30` to get your own calls-per-day and schema sizes, add the
-tools it marks `resident` to `visible`, and confirm the result with `toolbox_status` in a new session (unknown names
-are ignored silently).
+The shipped resident layer comes from a 30-day census of the author's machine; **after installing, the monthly census
+re-derives it from your own usage**. Pinning tools still uses `visible`, which is additive and never overridden. To look
+first, without DSH running, `python scripts/tool-census.py --days 30` reads the same logs and writes nothing.
 
 The census only reads `~/.dsh/sessions/**/session.v4.jsonl.zstd`; it writes nothing and never touches the network. It
 needs Python 3.10+ and `zstandard` (`pip install zstandard`). It counts dispatches (`tool/call` on native presets,

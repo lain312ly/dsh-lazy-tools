@@ -49,7 +49,26 @@
 | --- | --- |
 | `toolbox_search(query, limit?)` | 在当前预设装配、但被隐藏的工具里按分词后的关键词搜索 |
 | `toolbox_load(names[])` | 激活指定工具；返回参数名与必填项。本会话没装配的名字进 `unavailable`，安装里根本不存在的进 `unknown` |
-| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate`、`composedToolCount`、常驻/已加载/未加载、`dropped` |
+| `toolbox_status()` | 诊断：provider/model、路由 `toolUpdate`、`composedToolCount`、常驻/已加载/未加载、`dropped`、`census` |
+| `toolbox_census(dryRun?)` | 立刻普查一次并重算常驻层；`dryRun` 只报不改 |
+
+## 常驻层的自动校准（每月）
+
+常驻层不再是写死的常量，而是**按本机真实用量定期重算**：
+
+- 数据来源是 DSH 的 `sessionQuery` 服务：`listSessions()` 取会话、`inspectSession()` 读事件，
+  统计 `tool/call` 与 `tool/ptc-dispatch` 的次数（PTC 预设下后者才有内层工具名）；
+- 只读、只统计窗口（`windowDays`，默认 30 天）内、最近 `maxSessions`（默认 200）个会话；会话之间 `setImmediate` 让出，
+  不阻塞 agent loop。本机实测 109 会话 / 10,069 次调用 / 3.7 秒；
+- 分母是**实际覆盖天数**（最早一条计数事件到现在，上限为窗口），所以历史很短的新机器不会因为「除以 30」把所有工具
+  都判成低频；
+- schema 大小取自插件自己观测到的真实工具声明（`universe`），不依赖日志里的 `request/header.tools`；
+- 计时锚在「跑完一次普查」：结果带 `lastAt`，下次到期 = `lastAt + intervalDays`。没有记录时（全新安装）在加载后
+  `startDelayMs`（默认 30 秒）跑第一次。周期可配（1–365 天），`0` = 只手动；
+- 阈值（`windowDays`/`minCallsPerDay`/`maxSchemaChars`/`dominantCallsPerDay`）一变，旧结果作废，下次按新规则重算；
+- 结果写到 `$DSH_HOME/lazy-tools/census.json`，重启后直接采用，不会重扫；
+- 生效时会重建每个活着的 agent 的限制，并让已冻结的提示词目录在下一次组装时重算；
+- `visible` 始终是叠加项：用户钉住的工具不会被普查挤掉；`census.apply: false` 只记录不改动。
 
 ## 配置（`cordis.patch.yml` 的 `lazy-tools` 行）
 
@@ -61,6 +80,15 @@
 | `searchLimit` | `8` | `toolbox_search` 默认返回条数，上限 50 |
 | `statusTool` | `true` | 是否注册 `toolbox_status` |
 | `resumePreserve` | `true` | 续聊时把历史里已声明的工具视为已加载 |
+| `census.enabled` | `true` | 是否定期自动普查 |
+| `census.intervalDays` | `30` | 间隔天数，`0` = 只手动 |
+| `census.windowDays` | `30` | 统计窗口 |
+| `census.minCallsPerDay` | `3` | 日均低于此值 → 延迟 |
+| `census.maxSchemaChars` | `1500` | schema 大于此值不常驻（除非高频） |
+| `census.dominantCallsPerDay` | `50` | 日均高于此值无条件常驻 |
+| `census.maxSessions` | `200` | 最近会话样本上限 |
+| `census.apply` | `true` | 结果是否真的写进常驻层 |
+| `census.startDelayMs` | `30000` | 首次普查在加载后多久开跑 |
 
 示例：把 `subagent` 与 `web_search` 也留在常驻层：
 
@@ -70,9 +98,9 @@
     visible: [subagent, web_search]
 ```
 
-常驻层默认值来自作者环境的一份 30 天统计，**装好后请按自己的用量调整**：跑
-`python scripts/tool-census.py --days 30` 得到自己的日均调用次数与 schema 大小，把标为 `resident` 的工具加进
-`visible`，新会话用 `toolbox_status` 核对是否生效（写错的名字会被静默忽略）。
+常驻层的初始值来自作者环境的一份 30 天统计，**装好之后由每月普查按你自己的用量重算**；想固定某些工具仍然用
+`visible`（它是叠加项，不会被普查覆盖）。不开 DSH 也可以先手动看：`python scripts/tool-census.py --days 30`
+直接读日志、不写文件，把标为 `resident` 的工具加进 `visible`，新会话用 `toolbox_status` 核对是否生效（写错的名字会被静默忽略）。
 
 普查脚本只读 `~/.dsh/sessions/**/session.v4.jsonl.zstd`，不联网、不写文件；需要 Python 3.10+ 与
 `zstandard`（`pip install zstandard`）。它统计每个工具被调用的次数（native 的 `tool/call` 与 PTC 的

@@ -246,3 +246,24 @@ Live evidence, same machine and runtime as the rc.5 smoke:
 | no agent in the assembly | covered by unit test, not by a live route: a bare `assemble()` cannot be produced from a session |
 | render stability | unit test asserts the text is byte-identical before and after `toolbox_load` |
 | unit gate | `npm test` 13/13, `npm run check` pass under Node 24.19.0 |
+
+## 0.1.6 — self-calibrating resident layer (2026-11-27)
+
+Same machine and runtime as above. The census runs inside the host, reading logs through `sessionQuery`, so the numbers
+below are what the plugin itself produced, not a separate script.
+
+| Check | Observation |
+| --- | --- |
+| first run is scheduled after load | `toolbox_status` right after a reload: `census.source: default-list`, `lastRunAt: null`, `nextRunAt` = load + 30 s, `record` = `C:\Users\lain\.dsh\lazy-tools\census.json` |
+| first run really happens | 50 s later the record existed (5,598 bytes) with `sessions`, `calls`, `resident`, and the status flipped to `source: census` |
+| cadence anchors on the run | `lastRunAt` = 2026-11-27T14:45:36Z, `nextRunAt` = 2026-12-27T14:45:36Z (exactly +30 days), and a later reload adopted the record without rescanning |
+| measurement is bounded and fast | 109 sessions / 10,069 calls / 29.9 measured days / **3.7 s**, 0 failed sessions, `truncated: false` |
+| the layer really changes | manual `toolbox_census` reported `added: [job_output, pwsh, read_image, web_fetch]`; `toolbox_status.visible` became the 9 measured tools |
+| the sample cap matters (fault found live) | the first build capped at 60 sessions and reported `pwsh` at 35.2 calls/day — below the 50/day dominant bar — so a 5,044-character schema pushed the most-used tool into the deferred layer mid-session. With the 200-session cap the same tool measures 63.9/day and stays resident. Fixed in the shipped default, and the rate now divides by the measured span instead of a fixed 30 days |
+| the divisor is honest | `measuredDays: 29.9` from the oldest counted event; a 3-day history divides by 3 rather than 30 (unit-tested) |
+| unknown-schema names stay deferred | `ops_bash`, `ops_read_files`, `compress` appear in the counts with `schemaChars: null` — leftovers from other presets/installs. None of them is in this preset's tool surface, and a name without a measured schema is always deferred |
+| unit gate | `npm test` **20/20** (7 census tests: first run, fresh record postpones, overdue record reruns, `intervalDays: 0`, dry run, `apply: false`, missing service), `npm run check` pass under Node 24.19.0 |
+
+Not verified here: a real 30-day rollover (the unit tests simulate stale records with timestamps instead), `census.apply:
+false` on a live session (unit test only), and any interval other than 0/30 days against a real clock.
+
