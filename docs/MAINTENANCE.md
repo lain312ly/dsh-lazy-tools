@@ -1,14 +1,46 @@
 # 维护记录
 
 每周六 08:00 有一个会话任务做插件可用性检测：跑 `npm run check` / `npm test`、用真实会话冒烟、
-把结论写回这里并推到 `main`；发现 bug 就修，小修发 `v0.1.5.x`，大问题发 `v0.1.6`（规则见
-[CONTRIBUTING](../CONTRIBUTING.md#版本号规则)）。
+把结论写回这里并推到 `main`；发现 bug 就修，小修在当前次版本线上发四段 tag（现在 `v0.1.6.x`），
+大问题发下一个次版本（现在 `v0.1.7`），规则见 [CONTRIBUTING](../CONTRIBUTING.md#版本号规则)。
 
 **新记录加在表格顶部**，详情写在该行对应的分节里。表格只放结论与证据指针，长内容进分节。
 
 | 日期 | DSH / Desktop | 结论 | 发版 | 详情 |
 | --- | --- | --- | --- | --- |
+| 2026-11-28（定时） | 0.2.2-rc.5 / 2.0.24-next（未变） | 可用，无改动 | 未发版 | 本节 |
 | 2026-11-24（手动，非定时） | 0.2.2-rc.5 / 2.0.24-next | 可用；顺手修掉提示词目录的误报 | `v0.1.5.1` | 本节 |
+
+## 2026-11-28 — 定时周检（首跑）
+
+**结论**：可用，没有需要修的东西，因此没有发版。这周唯一的代码变动是上一轮（11-27）的两次发布
+（`v0.1.6` 每月自动普查、`v0.1.6.1` 装插件后重建提示词目录），都是手写功能/修复，不是本周检出的问题。
+
+**环境**：`dsh-desktop-next 2.0.24-next`、`@deepseek-ai/dsh 0.2.2-rc.5`、Electron 44.7.0（宿主 Node 24.21.0），
+与上次记录一致，没有升级。
+
+**静态**：`npm run check` 通过；`npm test` 22/22（含 7 个普查用例、2 个目录重建用例）。
+
+**真实会话冒烟**（子会话 `bd3e672a`，cordis 预设，按 CONTRIBUTING 第 3 条逐项做）：
+
+| 检查 | 观察 |
+| --- | --- |
+| 首个工具表 | **13 个工具 / 10,741 字符**，正好是普查出的 9 项常驻 + 4 个 toolbox 工具（未启用插件的基线是 42 工具 / 39,429 字符，见本会话首条 header） |
+| 限制生效 | `toolbox_status`：`restricted: true`、`agentToolCount: 13`、`composedToolCount: 50`、`visible` 9 项、`awaitingCount: 37` |
+| 搜索 | `toolbox_search("list subagent models")` → `total: 17`，第一个结果是 `list_subagent_models` |
+| 激活 | `toolbox_load(["list_subagent_models"])` → `activated: [list_subagent_models]`、`unavailable: []` |
+| 增量通道 | 第二个 `request/header` 由 13 → **14** 个工具（`laterAdded: [list_subagent_models]`），日志里 `developer/message` 携 `tool-addition`（seq 31） |
+| 加载后可用 | `list_subagent_models()` 返回 `deepseek-account — DeepSeek Account` |
+| 提示词目录 | 子会话贴出的是「Deferred tools of your preset …」共 37 个名字，与 `awaitingCount: 37` 一致 |
+| 报错 | 子会话 4 个工具的 5 次调用，`errors: 0` |
+| 形式化验收 | `verify-session-tools.py --check --max-tools 20 --max-chars 16000 --require-tools read,write,pwsh --expect-addition` → `PASS … tools=13 chars=10741 additions=1` |
+
+**普查自洽**（`toolbox_census({dryRun: true})`，只报不改）：111 会话 / 10,611 次调用 / 覆盖 30.0 天 / 3.9 秒 / 0 失败，
+按当前阈值算出的常驻层与正在生效的 9 项**完全一致**（`added: []`、`removed: []`）；`lastRunAt` 11-27 22:45、
+`nextRunAt` 12-27 22:45，间隔 30 天，记录文件在 `C:\Users\lain\.dsh\lazy-tools\census.json`。
+
+**未验证**：本周没有跑 PTC 呈现（`flash-lean-ptc-v3`）的冒烟——子代理固定走 `cordis`；`v0.1.6.1` 的目录重建
+仍只有单测证据（没在真实会话运行期间装插件）；真实 30 天普查跨越仍未发生（第一次到期是 12-27）。
 
 ## 2026-11-24 — 提示词目录按 agent 生成
 
